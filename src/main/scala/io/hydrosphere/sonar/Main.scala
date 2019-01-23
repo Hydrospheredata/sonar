@@ -28,8 +28,8 @@ import scala.concurrent.ExecutionContext
 object Dependencies {
   
   def dbTransactor[F[_]: Async](config: Configuration)(implicit cs: ContextShift[F]): F[Transactor[F]] = config.db match {
-    case Postgres(jdbcUrl, user, pass) => Async[F].delay(Transactor.fromDataSource[F](JdbcConnectionPool.create(jdbcUrl, user, pass), ExecutionContext.fromExecutor(Executors.newFixedThreadPool(32)), ExecutionContext.fromExecutor(Executors.newCachedThreadPool())))
-    case H2(jdbcUrl, user, pass) => Async[F].delay(Transactor.fromDriverManager[F]("org.postgresql.Driver", jdbcUrl, user, pass))
+    case H2(jdbcUrl, user, pass) => Async[F].delay(Transactor.fromDataSource[F](JdbcConnectionPool.create(jdbcUrl, user, pass), ExecutionContext.fromExecutor(Executors.newFixedThreadPool(32)), ExecutionContext.fromExecutor(Executors.newCachedThreadPool())))
+    case Postgres(jdbcUrl, user, pass) => Async[F].delay(Transactor.fromDriverManager[F]("org.postgresql.Driver", jdbcUrl, user, pass))
   }
   
   def metricService[F[_]: Sync](transactor: Transactor[F]): F[MetricSpecService[F]] = 
