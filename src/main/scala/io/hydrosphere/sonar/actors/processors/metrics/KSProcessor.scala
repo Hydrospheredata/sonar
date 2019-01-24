@@ -42,7 +42,7 @@ object KSProcessor {
     val ksFn = (sample: NonEmptyList[Double]) => KolmogorovSmirnovTest.test(sample, Statistics.generateDistribution(Statistics.Distribution.Normal, 100))
     val transposed = CollectionOps.safeTranspose(flatRequests)
     transposed.filter(_.nonEmpty).map(l => NonEmptyList(l.head, l.toList.tail)).map(ksFn).zipWithIndex.flatMap { case (ksResult, idx) =>
-      val labels = Map("modelVersionId" -> metricSpec.modelVersionId.toString, "sourceIndex" -> idx.toString)
+      val labels = Map("modelVersionId" -> metricSpec.modelVersionId.toString, "columnIndex" -> idx.toString)
       val health = if (metricSpec.withHealth) {
         Some(ksResult.value <= ksResult.rejectionLevel)
       } else None

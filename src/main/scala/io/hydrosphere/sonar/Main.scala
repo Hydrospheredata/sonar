@@ -35,8 +35,8 @@ object Dependencies {
   def metricService[F[_]: Sync](transactor: Transactor[F]): F[MetricSpecService[F]] = 
     Sync[F].delay(new MetricSpecServiceInterpreter[F](transactor))
  
-  def httpService[F[_]: Effect](metricSpecService: MetricSpecService[F]): F[HttpService[F]] = 
-    Effect[F].delay(new HttpService[F](metricSpecService))
+  def httpService[F[_]: Effect](metricSpecService: MetricSpecService[F], metricStorageService: MetricStorageService[F]): F[HttpService[F]] = 
+    Effect[F].delay(new HttpService[F](metricSpecService, metricStorageService))
   
   def modelDataService[F[_]: Async](config: Configuration): F[ModelDataService[F]] = for {
     state <- Ref.of[F, Map[Long, ModelVersion]](Map.empty)
@@ -46,8 +46,8 @@ object Dependencies {
   def predictionService[F[_]: Async](config: Configuration): F[PredictionService[F]] = 
     Async[F].delay(new PredictionServiceGrpcInterpreter[F](config))
   
-  def metricStorageService[F[_]: Sync](config: Configuration): F[MetricStorageService[F]] = 
-    Sync[F].delay(new MetricStorageServiceInfluxInterpreter[F](config))
+  def metricStorageService[F[_]: Async](config: Configuration): F[MetricStorageService[F]] = 
+    Async[F].delay(new MetricStorageServiceInfluxInterpreter[F](config))
   
   def profileStorageService[F[_]: Async](config: Configuration): F[ProfileStorageService[F]] = for {
     state <- Ref.of[F, ProfileStorageServiceMongoInterpreter.ObjectIdState](Map.empty)
@@ -89,10 +89,10 @@ object Main extends IOApp with Logging {
     
     transactor <- Dependencies.dbTransactor[IO](config)
     metricSpecService <- Dependencies.metricService[IO](transactor)
-    httpService <- Dependencies.httpService[IO](metricSpecService)
+    metricStorageService <- Dependencies.metricStorageService[IO](config)
+    httpService <- Dependencies.httpService[IO](metricSpecService, metricStorageService)
     modelDataService <- Dependencies.modelDataService[IO](config)
     predictionService <- Dependencies.predictionService[IO](config)
-    metricStorageService <- Dependencies.metricStorageService[IO](config)
     profileStorageService <- Dependencies.profileStorageService[IO](config)
     
     _ <- runDbMigrations[IO](config)

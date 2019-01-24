@@ -11,7 +11,7 @@ import io.circe.generic.extras.{Configuration => CirceExtraConfiguration}
 import io.circe.generic.extras.auto._
 import io.finch._
 import io.finch.circe._
-import io.hydrosphere.sonar.services.MetricSpecService
+import io.hydrosphere.sonar.services.{MetricSpecService, MetricStorageService}
 import io.hydrosphere.sonar.utils.MetricSpecNotFound
 import io.hydrosphere.sonar.Logging
 import io.hydrosphere.sonar.terms.MetricSpec
@@ -19,7 +19,7 @@ import io.hydrosphere.sonar.terms.MetricSpec
 import scala.util.control.NonFatal
 
 //noinspection TypeAnnotation
-class HttpService[F[_] : Monad : Effect](metricSpecService: MetricSpecService[F]) extends Logging with Endpoint.Module[F] {
+class HttpService[F[_] : Monad : Effect](metricSpecService: MetricSpecService[F], metricStorageService: MetricStorageService[F]) extends Logging with Endpoint.Module[F] {
 
   implicit val genDevConfig: CirceExtraConfiguration =
     CirceExtraConfiguration.default.withDefaults.withDiscriminator("kind")
@@ -58,8 +58,13 @@ class HttpService[F[_] : Monad : Effect](metricSpecService: MetricSpecService[F]
   def getAllMetricSpecs = get("metricspec") {
     metricSpecService.getAllMetricSpecs.map(Ok)
   }
+  
+  def getMetrics = get("metrics" :: param[Long]("modelVersionId") :: param[Long]("interval") :: params[String]("metrics") :: paramOption[String]("columnIndex")) 
+  { (modelVersionId: Long, interval: Long, metrics: Seq[String], columnIndex: Option[String]) =>
+    metricStorageService.getMetrics(modelVersionId, interval, metrics, columnIndex).map(Ok)
+  }
 
-  def endpoints = (healthCheck :+: createMetricSpec :+: getMetricSpecById :+: getAllMetricSpecs :+: getMetricSpecsByModelVersion) handle {
+  def endpoints = (healthCheck :+: createMetricSpec :+: getMetricSpecById :+: getAllMetricSpecs :+: getMetricSpecsByModelVersion :+: getMetrics) handle {
     case e: io.finch.Error.NotParsed =>
       logger.warn(s"Can't parse json with message: ${e.getMessage()}")
       BadRequest(new RuntimeException(e))
