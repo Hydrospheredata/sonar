@@ -11,15 +11,17 @@ import io.circe.generic.extras.{Configuration => CirceExtraConfiguration}
 import io.circe.generic.extras.auto._
 import io.finch._
 import io.finch.circe._
-import io.hydrosphere.sonar.services.{MetricSpecService, MetricStorageService}
+import io.hydrosphere.sonar.services.{MetricSpecService, MetricStorageService, ProfileStorageService}
 import io.hydrosphere.sonar.utils.MetricSpecNotFound
 import io.hydrosphere.sonar.Logging
-import io.hydrosphere.sonar.terms.MetricSpec
+import io.hydrosphere.sonar.terms.{MetricSpec, Profile, ProfileSourceKind}
 
 import scala.util.control.NonFatal
 
+case class ProfileResponse(training: Option[Profile], production: Option[Profile])
+
 //noinspection TypeAnnotation
-class HttpService[F[_] : Monad : Effect](metricSpecService: MetricSpecService[F], metricStorageService: MetricStorageService[F]) extends Logging with Endpoint.Module[F] {
+class HttpService[F[_] : Monad : Effect](metricSpecService: MetricSpecService[F], metricStorageService: MetricStorageService[F], profileStorageService: ProfileStorageService[F]) extends Logging with Endpoint.Module[F] {
 
   implicit val genDevConfig: CirceExtraConfiguration =
     CirceExtraConfiguration.default.withDefaults.withDiscriminator("kind")
@@ -63,8 +65,15 @@ class HttpService[F[_] : Monad : Effect](metricSpecService: MetricSpecService[F]
   { (modelVersionId: Long, interval: Long, metrics: Seq[String], columnIndex: Option[String]) =>
     metricStorageService.getMetrics(modelVersionId, interval, metrics, columnIndex).map(Ok)
   }
+  
+  def getProfiles = get("profiles" :: path[Long] :: path[String]) { (modelVersionId: Long, fieldName: String) =>
+    for {
+      training <- profileStorageService.getProfile(modelVersionId, fieldName, ProfileSourceKind.Training)
+      production <- profileStorageService.getProfile(modelVersionId, fieldName, ProfileSourceKind.Production)
+    } yield Ok(ProfileResponse(training, production))
+  }
 
-  def endpoints = (healthCheck :+: createMetricSpec :+: getMetricSpecById :+: getAllMetricSpecs :+: getMetricSpecsByModelVersion :+: getMetrics) handle {
+  def endpoints = (healthCheck :+: createMetricSpec :+: getMetricSpecById :+: getAllMetricSpecs :+: getMetricSpecsByModelVersion :+: getMetrics :+: getProfiles) handle {
     case e: io.finch.Error.NotParsed =>
       logger.warn(s"Can't parse json with message: ${e.getMessage()}")
       BadRequest(new RuntimeException(e))

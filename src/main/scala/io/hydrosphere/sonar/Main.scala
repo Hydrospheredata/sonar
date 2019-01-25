@@ -35,8 +35,8 @@ object Dependencies {
   def metricService[F[_]: Sync](transactor: Transactor[F]): F[MetricSpecService[F]] = 
     Sync[F].delay(new MetricSpecServiceInterpreter[F](transactor))
  
-  def httpService[F[_]: Effect](metricSpecService: MetricSpecService[F], metricStorageService: MetricStorageService[F]): F[HttpService[F]] = 
-    Effect[F].delay(new HttpService[F](metricSpecService, metricStorageService))
+  def httpService[F[_]: Effect](metricSpecService: MetricSpecService[F], metricStorageService: MetricStorageService[F], profileStorageService: ProfileStorageService[F]): F[HttpService[F]] = 
+    Effect[F].delay(new HttpService[F](metricSpecService, metricStorageService, profileStorageService))
   
   def modelDataService[F[_]: Async](config: Configuration): F[ModelDataService[F]] = for {
     state <- Ref.of[F, Map[Long, ModelVersion]](Map.empty)
@@ -90,10 +90,10 @@ object Main extends IOApp with Logging {
     transactor <- Dependencies.dbTransactor[IO](config)
     metricSpecService <- Dependencies.metricService[IO](transactor)
     metricStorageService <- Dependencies.metricStorageService[IO](config)
-    httpService <- Dependencies.httpService[IO](metricSpecService, metricStorageService)
+    profileStorageService <- Dependencies.profileStorageService[IO](config)
+    httpService <- Dependencies.httpService[IO](metricSpecService, metricStorageService, profileStorageService)
     modelDataService <- Dependencies.modelDataService[IO](config)
     predictionService <- Dependencies.predictionService[IO](config)
-    profileStorageService <- Dependencies.profileStorageService[IO](config)
     
     _ <- runDbMigrations[IO](config)
     
