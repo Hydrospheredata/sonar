@@ -5,6 +5,7 @@ import cats.data.NonEmptyList
 import cats.effect._
 import cats.implicits._
 import com.twitter.finagle.Service
+import com.twitter.finagle.http.filter.Cors
 import com.twitter.finagle.http.{Request, Response}
 import io.circe._
 import io.circe.generic.extras.{Configuration => CirceExtraConfiguration}
@@ -92,5 +93,13 @@ class HttpService[F[_] : Monad : Effect](metricSpecService: MetricSpecService[F]
       InternalServerError(new RuntimeException(e))
   }
 
-  def api: Service[Request, Response] = endpoints.toServiceAs[Application.Json]
+  def api: Service[Request, Response] = {
+    val policy: Cors.Policy = Cors.Policy(
+      allowsOrigin = _ => Some("*"),
+      allowsMethods = _ => Some(Seq("GET", "POST")),
+      allowsHeaders = _ => Some(Seq("Accept"))
+    )
+
+    new Cors.HttpFilter(policy).andThen(endpoints.toServiceAs[Application.Json])
+  }
 }
