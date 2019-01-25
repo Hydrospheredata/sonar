@@ -46,35 +46,35 @@ class HttpService[F[_] : Monad : Effect](metricSpecService: MetricSpecService[F]
     Ok("ok").pure[F]
   }
 
-  def createMetricSpec = post("metricspec" :: jsonBody[MetricSpec]) { metricSpec: MetricSpec =>
+  def createMetricSpec = post("monitoring" :: "metricspec" :: jsonBody[MetricSpec]) { metricSpec: MetricSpec =>
     metricSpecService.createMetricSpec(metricSpec).map(Created)
   }
 
-  def getMetricSpecById = get("metricspec" :: path[String]) { id: String =>
+  def getMetricSpecById = get("monitoring" :: "metricspec" :: path[String]) { id: String =>
     metricSpecService.getMetricSpecById(id).map(Ok)
   }
 
-  def getMetricSpecsByModelVersion = get("metricspec" :: "modelversion" :: path[Long]) { modelVersionId: Long =>
+  def getMetricSpecsByModelVersion = get("monitoring" :: "metricspec" :: "modelversion" :: path[Long]) { modelVersionId: Long =>
     metricSpecService.getMetricSpecsByModelVersion(modelVersionId).map(Ok)
   }
 
-  def getAllMetricSpecs = get("metricspec") {
+  def getAllMetricSpecs = get("monitoring" :: "metricspec") {
     metricSpecService.getAllMetricSpecs.map(Ok)
   }
   
-  def getMetrics = get("metrics" :: param[Long]("modelVersionId") :: param[Long]("interval") :: params[String]("metrics") :: paramOption[String]("columnIndex")) 
+  def getMetrics = get("monitoring" :: "metrics" :: param[Long]("modelVersionId") :: param[Long]("interval") :: params[String]("metrics") :: paramOption[String]("columnIndex")) 
   { (modelVersionId: Long, interval: Long, metrics: Seq[String], columnIndex: Option[String]) =>
     metricStorageService.getMetrics(modelVersionId, interval, metrics, columnIndex).map(Ok)
   }
   
-  def getProfiles = get("profiles" :: path[Long] :: path[String]) { (modelVersionId: Long, fieldName: String) =>
+  def getProfiles = get("monitoring" :: "profiles" :: path[Long] :: path[String]) { (modelVersionId: Long, fieldName: String) =>
     for {
       training <- profileStorageService.getProfile(modelVersionId, fieldName, ProfileSourceKind.Training)
       production <- profileStorageService.getProfile(modelVersionId, fieldName, ProfileSourceKind.Production)
     } yield Ok(ProfileResponse(training, production))
   }
   
-  def getProfileNames = get("fields" :: path[Long]) { modelVersionId: Long =>
+  def getProfileNames = get("monitoring" :: "fields" :: path[Long]) { modelVersionId: Long =>
     for {
       training <- profileStorageService.getPreprocessedDistinctNames(modelVersionId, ProfileSourceKind.Training)
       production <- profileStorageService.getPreprocessedDistinctNames(modelVersionId, ProfileSourceKind.Production)

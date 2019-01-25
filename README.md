@@ -5,7 +5,7 @@
 ### Create Metric Specification
 
 ```
-POST /metricspec
+POST /monitoring/metricspec
 {
     "name": string,
     "modelVersionId": long,
@@ -68,7 +68,7 @@ POST /metricspec
 #### By ID
 
 ```
-GET /metricspec/{metric-spec-uuid}
+GET /monitoring/metricspec/{metric-spec-uuid}
 
 200 OK
 {
@@ -84,7 +84,7 @@ GET /metricspec/{metric-spec-uuid}
 #### By Model Version
 
 ```
-GET /metricspec/modelversion/{model-version-id}
+GET /monitoring/metricspec/modelversion/{model-version-id}
 
 200 OK
 [
@@ -103,7 +103,7 @@ GET /metricspec/modelversion/{model-version-id}
 #### All
 
 ```
-GET /metricspec
+GET /monitoring/metricspec
 
 200 OK
 [
@@ -122,7 +122,7 @@ GET /metricspec
 ### Get Metrics
 
 ```
-GET /metrics?modelVersionId=<long>&interval=<long>&metrics=<string, repeatable>&columnIndex=<string, optional>
+GET /monitoring/metrics?modelVersionId=<long>&interval=<long>&metrics=<string, repeatable>&columnIndex=<string, optional>
 
 200 OK
 [
@@ -155,7 +155,7 @@ GET /metrics?modelVersionId=<long>&interval=<long>&metrics=<string, repeatable>&
 ### Get Profiles
 
 ```
-GET /profiles/{model-version-id}/{field-name}
+GET /monitoring/profiles/{model-version-id}/{field-name}
 
 200 OK
 {
@@ -217,7 +217,7 @@ GET /profiles/{model-version-id}/{field-name}
 #### Getting field names
 
 ```
-GET /fields/{model-version-id}
+GET /monitoring/fields/{model-version-id}
 
 200 OK
 [
