@@ -72,8 +72,15 @@ class HttpService[F[_] : Monad : Effect](metricSpecService: MetricSpecService[F]
       production <- profileStorageService.getProfile(modelVersionId, fieldName, ProfileSourceKind.Production)
     } yield Ok(ProfileResponse(training, production))
   }
+  
+  def getProfileNames = get("fields" :: path[Long]) { modelVersionId: Long =>
+    for {
+      training <- profileStorageService.getPreprocessedDistinctNames(modelVersionId, ProfileSourceKind.Training)
+      production <- profileStorageService.getPreprocessedDistinctNames(modelVersionId, ProfileSourceKind.Production)
+    } yield Ok((training ++ production).distinct.sorted)
+  }
 
-  def endpoints = (healthCheck :+: createMetricSpec :+: getMetricSpecById :+: getAllMetricSpecs :+: getMetricSpecsByModelVersion :+: getMetrics :+: getProfiles) handle {
+  def endpoints = (healthCheck :+: createMetricSpec :+: getMetricSpecById :+: getAllMetricSpecs :+: getMetricSpecsByModelVersion :+: getMetrics :+: getProfiles :+: getProfileNames) handle {
     case e: io.finch.Error.NotParsed =>
       logger.warn(s"Can't parse json with message: ${e.getMessage()}")
       BadRequest(new RuntimeException(e))

@@ -29,6 +29,8 @@ trait ProfileStorageService[F[_]] {
   def saveProfile(profile: PreprocessedProfile, profileSourceKind: ProfileSourceKind): F[Unit]
 
   def getProfile(modelVersionId: Long, fieldName: String, sourceKind: ProfileSourceKind): F[Option[Profile]]
+
+  def getPreprocessedDistinctNames(modelVersionId: Long, sourceKind: ProfileSourceKind): F[Seq[String]]
 }
 
 class ProfileStorageServiceDummyInterpreter[F[_]: Sync] extends ProfileStorageService[F] with Logging {
@@ -39,6 +41,9 @@ class ProfileStorageServiceDummyInterpreter[F[_]: Sync] extends ProfileStorageSe
   override def getProfile(modelVersionId: Long, fieldName: String, sourceKind: ProfileSourceKind): F[Option[Profile]] = {
     Sync[F].pure(None)
   }
+
+  override def getPreprocessedDistinctNames(modelVersionId: Long, sourceKind: ProfileSourceKind): F[Seq[String]] =
+    Sync[F].pure(Seq.empty)
 }
 
 object ProfileStorageServiceMongoInterpreter {
@@ -199,5 +204,10 @@ class ProfileStorageServiceMongoInterpreter[F[_]: Async](config: Configuration, 
       _ <- saveDocument(updateDocument, objectId, profileSourceKind)
     } yield Unit
     case _: TextPreprocessedProfile => ???
+  }
+
+  override def getPreprocessedDistinctNames(modelVersionId: Long, sourceKind: ProfileSourceKind): F[Seq[String]] = mongoClient.use { client =>
+    collection(sourceKind, database(client))
+      .distinct[String]("name", equal("modelVersionId", modelVersionId)).toFuture().liftToAsync[F]
   }
 }
