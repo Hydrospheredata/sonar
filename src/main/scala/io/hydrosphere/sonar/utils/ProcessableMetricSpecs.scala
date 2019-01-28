@@ -28,4 +28,8 @@ object ProcessableMetricSpecs {
   implicit def processableLatency: Processable[LatencyMetricSpec] = (t: LatencyMetricSpec) => Behaviors.setup(context => {
     LatencyProcessor.behavior(context, t, FiniteDuration(t.config.interval, "seconds"))
   })
+  
+  implicit def processableCounter: Processable[CounterMetricSpec] = (t: CounterMetricSpec) => Behaviors.setup(context => {
+    CounterProcessor.behavior(context, t, FiniteDuration(t.config.interval, "seconds"))
+  })
 }

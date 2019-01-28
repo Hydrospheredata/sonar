@@ -6,3 +6,4 @@ case class InputMetricSpecConfiguration(input: String) extends MetricSpecConfigu
 case class ExternalDoubleMetricSpecConfiguration(input: String, applicationName: String, applicationSignature: String, threshold: Option[Double]) extends MetricSpecConfiguration
 case class ExternalMetricSpecConfiguration(input: String, applicationName: String, applicationSignature: String) extends MetricSpecConfiguration
 case class LatencyMetricSpecConfiguration(interval: Long, threshold: Option[Double]) extends MetricSpecConfiguration
+case class CounterMetricSpecConfiguration(interval: Long) extends MetricSpecConfiguration

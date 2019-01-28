@@ -71,6 +71,13 @@ POST /monitoring/metricspec
 }
 ```
 
+- `CounterMetricSpec` – Request Counter
+```
+{
+    "interval": long (in seconds)
+}
+```
+
 ### Get Metric Specification
 
 #### By ID
@@ -159,6 +166,10 @@ GET /monitoring/metrics?modelVersionId=<long>&interval=<long>&metrics=<string, r
 - GAN
     - `gan_outlier`
     - `gan_inlier`
+- Request Latency
+    - `latency`
+- Request Counter
+    - `counter`
 
 ### Get Profiles
 
