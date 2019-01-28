@@ -32,4 +32,8 @@ object ProcessableMetricSpecs {
   implicit def processableCounter: Processable[CounterMetricSpec] = (t: CounterMetricSpec) => Behaviors.setup(context => {
     CounterProcessor.behavior(context, t, FiniteDuration(t.config.interval, "seconds"))
   })
+  
+  implicit def processableErrorRate: Processable[ErrorRateMetricSpec] = (t: ErrorRateMetricSpec) => Behaviors.setup(context => {
+    ErrorRateProcessor.behavior(context, t, FiniteDuration(t.config.interval, "seconds"))
+  })
 }

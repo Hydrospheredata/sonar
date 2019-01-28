@@ -78,6 +78,14 @@ POST /monitoring/metricspec
 }
 ```
 
+- `ErrorRateMetricSpec` – Error Rate
+```
+{
+    "interval": long (in seconds),
+    "threshold": double (optional, only for health) 
+}
+```
+
 ### Get Metric Specification
 
 #### By ID
@@ -170,6 +178,8 @@ GET /monitoring/metrics?modelVersionId=<long>&interval=<long>&metrics=<string, r
     - `latency`
 - Request Counter
     - `counter`
+- Error Rate
+    - `error_rate`
 
 ### Get Profiles
 
