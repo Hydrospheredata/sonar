@@ -63,6 +63,14 @@ POST /monitoring/metricspec
 }
 ```
 
+- `LatenctMetricSpec` – Request Latency
+```
+{
+    "interval": long (in seconds),
+    "threshold": double (optional, only for health) 
+}
+```
+
 ### Get Metric Specification
 
 #### By ID

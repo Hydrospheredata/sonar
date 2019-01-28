@@ -2,7 +2,7 @@ package io.hydrosphere.sonar.utils
 
 import akka.actor.typed.scaladsl.Behaviors
 import cats.effect.IO
-import io.hydrosphere.sonar.actors.processors.metrics.{AEProcessor, GANProcessor, KSProcessor, RFProcessor}
+import io.hydrosphere.sonar.actors.processors.metrics._
 import io.hydrosphere.sonar.services.PredictionService
 import io.hydrosphere.sonar.terms._
 
@@ -23,5 +23,9 @@ object ProcessableMetricSpecs {
   
   implicit def processableGAN(implicit predictionService: PredictionService[IO]): Processable[GANMetricSpec] = (t: GANMetricSpec) => Behaviors.setup(context => {
     new GANProcessor(context, t)
+  })
+  
+  implicit def processableLatency: Processable[LatencyMetricSpec] = (t: LatencyMetricSpec) => Behaviors.setup(context => {
+    LatencyProcessor.behavior(context, t, FiniteDuration(t.config.interval, "seconds"))
   })
 }

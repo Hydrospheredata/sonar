@@ -14,3 +14,4 @@ case class KSMetricSpec(name: String, modelVersionId: Long, config: InputMetricS
 case class RFMetricSpec(name: String, modelVersionId: Long, config: ExternalDoubleMetricSpecConfiguration, withHealth: Boolean = false, id: String = UUID.randomUUID().toString) extends MetricSpec
 case class AEMetricSpec(name: String, modelVersionId: Long, config: ExternalDoubleMetricSpecConfiguration, withHealth: Boolean = false, id: String = UUID.randomUUID().toString) extends MetricSpec
 case class GANMetricSpec(name: String, modelVersionId: Long, config: ExternalMetricSpecConfiguration, withHealth: Boolean = false, id: String = UUID.randomUUID().toString) extends MetricSpec
+case class LatencyMetricSpec(name: String, modelVersionId: Long, config: LatencyMetricSpecConfiguration, withHealth: Boolean = false, id: String = UUID.randomUUID().toString) extends MetricSpec

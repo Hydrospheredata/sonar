@@ -1,6 +1,6 @@
 package io.hydrosphere.sonar.actors.processors.metrics
 
-import akka.actor.typed.Behavior
+import akka.actor.typed.{ActorRef, Behavior}
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import cats.data.NonEmptyList
 import eu.timepit.refined.auto._
@@ -55,7 +55,7 @@ object KSProcessor {
   
   private def process(requests: Vector[Processor.MetricRequest], metricSpec: KSMetricSpec): Unit = {
     val metrics = computeMetrics(requests, metricSpec)
-    val saveActors = requests.map(_.saveTo).toSet
+    val saveActors: Set[ActorRef[MetricWriter.Message]] = requests.map(_.saveTo).toSet
     saveActors.foreach(_ ! MetricWriter.ProcessedMetric(metrics))
   }
   
