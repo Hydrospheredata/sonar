@@ -97,7 +97,7 @@ class HttpService[F[_] : Monad : Effect](metricSpecService: MetricSpecService[F]
     val policy: Cors.Policy = Cors.Policy(
       allowsOrigin = _ => Some("*"),
       allowsMethods = _ => Some(Seq("GET", "POST")),
-      allowsHeaders = _ => Some(Seq("Accept"))
+      allowsHeaders = _ => Some(Seq("*"))
     )
 
     new Cors.HttpFilter(policy).andThen(endpoints.toServiceAs[Application.Json])
