@@ -26,7 +26,10 @@ class GANProcessor(context: ActorContext[Processor.MetricMessage], metricSpec: G
           val health = if (metricSpec.withHealth) {
             Some(outlier < inlier)
           } else None
-          val labels = Map("modelVersionId" -> metricSpec.modelVersionId.toString)
+          val labels = Map(
+            "modelVersionId" -> metricSpec.modelVersionId.toString,
+            "trace" -> Traces.single(payload)
+          )
           val metrics = Seq(
             Metric("gan_outlier", outlier, labels, health),
             Metric("gan_inlier", inlier, labels, health)
