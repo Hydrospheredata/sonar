@@ -28,7 +28,12 @@ class AEProcessor(context: ActorContext[Processor.MetricMessage], metricSpec: AE
           val health = if (metricSpec.withHealth) {
             Some(reconstructed <= metricSpec.config.threshold.getOrElse(Double.MaxValue))
           } else None
-          val metric = Metric("autoencoder_reconstructed", reconstructed, Map("modelVersionId" -> metricSpec.modelVersionId.toString), health)
+          val metric = Metric(
+            "autoencoder_reconstructed", reconstructed,
+            Map(
+              "modelVersionId" -> metricSpec.modelVersionId.toString,
+              "trace" -> Traces.single(payload)),
+            health)
           saveTo ! MetricWriter.ProcessedMetric(Seq(metric))
         case Left(exc) => context.log.error(exc, s"Error while requesting AE (${metricSpec.config.applicationName} -> ${metricSpec.config.applicationSignature}) prediction for modelVersion ${metricSpec.modelVersionId}")
       }

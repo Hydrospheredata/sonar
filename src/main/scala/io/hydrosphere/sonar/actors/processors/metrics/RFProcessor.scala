@@ -27,7 +27,12 @@ class RFProcessor(context: ActorContext[Processor.MetricMessage], metricSpec: RF
           val health = if (metricSpec.withHealth) {
             Some(score <= metricSpec.config.threshold.getOrElse(Double.MaxValue))
           } else None
-          val metric = Metric("randomforest", score, Map("modelVersionId" -> metricSpec.modelVersionId.toString), health)
+          
+          val labels = Map(
+            "modelVersionId" -> metricSpec.modelVersionId.toString,
+            "trace" -> Traces.single(payload)
+          )
+          val metric = Metric("randomforest", score, labels, health)
           saveTo ! MetricWriter.ProcessedMetric(Seq(metric))
         case Left(exc) => context.log.error(exc, s"Error while requesting RF prediction (${metricSpec.config.applicationName} -> ${metricSpec.config.applicationSignature}) for modelVersion ${metricSpec.modelVersionId}")
       }
