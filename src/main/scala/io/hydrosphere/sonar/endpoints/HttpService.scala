@@ -1,5 +1,7 @@
 package io.hydrosphere.sonar.endpoints
 
+import java.util.UUID
+
 import cats._
 import cats.data.NonEmptyList
 import cats.effect._
@@ -8,6 +10,7 @@ import com.twitter.finagle.Service
 import com.twitter.finagle.http.filter.Cors
 import com.twitter.finagle.http.{Request, Response}
 import io.circe._
+import io.circe.parser.decode
 import io.circe.generic.extras.{Configuration => CirceExtraConfiguration}
 import io.circe.generic.extras.auto._
 import io.finch._
@@ -20,6 +23,9 @@ import io.hydrosphere.sonar.terms.{MetricSpec, Profile, ProfileSourceKind}
 import scala.util.control.NonFatal
 
 case class ProfileResponse(training: Option[Profile], production: Option[Profile])
+
+// TODO: remove after research
+case class Test(i: Int, s: String = UUID.randomUUID().toString, r: Double = scala.util.Random.nextDouble())
 
 //noinspection TypeAnnotation
 class HttpService[F[_] : Monad : Effect](metricSpecService: MetricSpecService[F], metricStorageService: MetricStorageService[F], profileStorageService: ProfileStorageService[F]) extends Logging with Endpoint.Module[F] {
@@ -42,12 +48,25 @@ class HttpService[F[_] : Monad : Effect](metricSpecService: MetricSpecService[F]
     case e: Exception => encodeErrorList(NonEmptyList.one(e))
   })
 
+  // TODO: remove after research
+  def test = get("monitoring" :: "test" :: jsonBody[Test]) { test: Test =>
+    println(decode[Test]("""{"i": 1}"""))
+    println(decode[Test]("""{"i": 1}"""))
+    println(decode[Test]("""{"i": 1}"""))
+    println(decode[Test]("""{"i": 1}"""))
+    Ok(test).pure[F]
+  }
+
   def healthCheck: Endpoint[F, String] = get("health") {
     Ok("ok").pure[F]
   }
 
-  def createMetricSpec = post("monitoring" :: "metricspec" :: jsonBody[MetricSpec]) { metricSpec: MetricSpec =>
-    metricSpecService.createMetricSpec(metricSpec).map(Created)
+  def createMetricSpec = post("monitoring" :: "metricspec" :: stringBody) { body: String =>
+    val metricSpec = decode[MetricSpec](body)
+    metricSpec match {
+      case Left(error) => throw error
+      case Right(value) => metricSpecService.createMetricSpec(value).map(Created)
+    }
   }
 
   def getMetricSpecById = get("monitoring" :: "metricspec" :: path[String]) { id: String =>
@@ -63,7 +82,7 @@ class HttpService[F[_] : Monad : Effect](metricSpecService: MetricSpecService[F]
   }
   
   def getMetrics = get("monitoring" :: "metrics" :: param[Long]("modelVersionId") :: param[Long]("interval") :: params[String]("metrics") :: paramOption[String]("columnIndex")) 
-  { (modelVersionId: Long, interval: Long, metrics: Seq[String], columnIndex: Option[String]) =>
+  { (modelVersionId: Long, interval: Long, metrics: List[String], columnIndex: Option[String]) =>
     metricStorageService.getMetrics(modelVersionId, interval, metrics, columnIndex).map(Ok)
   }
   
@@ -81,7 +100,7 @@ class HttpService[F[_] : Monad : Effect](metricSpecService: MetricSpecService[F]
     } yield Ok((training ++ production).distinct.sorted)
   }
 
-  def endpoints = (healthCheck :+: createMetricSpec :+: getMetricSpecById :+: getAllMetricSpecs :+: getMetricSpecsByModelVersion :+: getMetrics :+: getProfiles :+: getProfileNames) handle {
+  def endpoints = (healthCheck :+: createMetricSpec :+: getMetricSpecById :+: getAllMetricSpecs :+: getMetricSpecsByModelVersion :+: getMetrics :+: getProfiles :+: getProfileNames :+: test) handle {
     case e: io.finch.Error.NotParsed =>
       logger.warn(s"Can't parse json with message: ${e.getMessage()}")
       BadRequest(new RuntimeException(e))
