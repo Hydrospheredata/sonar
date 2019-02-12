@@ -1,6 +1,6 @@
 package io.hydrosphere.sonar.terms
 
-import io.hydrosphere.sonar.terms.statistics.{CommonStatistics, DescriptiveStatistics, Histogram, QuantileStatistics}
+import io.hydrosphere.sonar.terms.statistics._
 
 sealed trait Profile
 
@@ -23,6 +23,25 @@ object NumericalProfile {
       quantileStatistics,
       DescriptiveStatistics(pp, quantileStatistics.median),
       Histogram(pp)
+    )
+  }
+}
+
+
+case class TextProfile(
+  name: String,
+  modelVersionId: Long,
+  commonStatistics: CommonStatistics,
+  textStatistics: TextStatistics
+) extends Profile
+
+object TextProfile {
+  def apply(pp: TextPreprocessedProfile): TextProfile = {
+    new TextProfile(
+      pp.name,
+      pp.modelVersionId,
+      CommonStatistics(pp),
+      TextStatistics(pp)
     )
   }
 }

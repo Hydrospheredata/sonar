@@ -153,6 +153,38 @@ class ProfileStorageServiceMongoInterpreter[F[_]: Async](config: Configuration, 
     )
   }
   
+  def textUpdateDocument(pp: TextPreprocessedProfile, objectId: BsonObjectId): Document = {
+    val increment = Document(
+      "size" -> pp.size,
+      "missing" -> pp.missing,
+      "sentimentSum" -> pp.sentimentSum,
+      "lengthSum" -> pp.lengthSum,
+      "tokenLengthSum" -> pp.tokenLengthSum,
+      "treeDepthSum" -> pp.treeDepthSum,
+      "uniqueLemmasSum" -> pp.uniqueLemmasSum
+    )
+    val languagesSumDocument = Document(pp.languagesSum.toSeq.map({
+      case (k, v) => (s"languagesSum.$k", v)
+    }))
+    val posTagSumDocument = Document(pp.posTagsSum.toSeq.map({
+      case (k, v) => (s"posTagSum.$k", v)
+    }))
+    val hyperLogLogDocument = Document(pp.tokenHyperLogLog.buckets.toSeq.map({
+      case (k, v) => (s"tokenHyperLogLog.buckets.$k", v)
+    }))
+    val inc = increment ++ languagesSumDocument ++ posTagSumDocument ++ hyperLogLogDocument
+    Document(
+      "$inc" -> inc,
+      "$setOnInsert" -> Document(
+        "_id" -> objectId,
+        "tokenHyperLogLog.size" -> pp.tokenHyperLogLog.size,
+        "name" -> pp.name,
+        "modelVersionId" -> pp.modelVersionId,
+        "kind" -> "text"
+      )
+    )
+  }
+  
   def getProfile(modelVersionId: Long, fieldName: String, sourceKind: ProfileSourceKind): F[Option[Profile]] = mongoClient.use { client =>
     collection(sourceKind, database(client))
       .find(and(equal("modelVersionId", modelVersionId), equal("name", fieldName)))
@@ -184,6 +216,23 @@ class ProfileStorageServiceMongoInterpreter[F[_]: Async](config: Configuration, 
                 buckets <- cms.get("buckets").map(_.asDocument().entrySet().asScala.map(e => e.getKey.toInt -> e.getValue.asInt64().longValue()).toMap)
               } yield CountMinSketch(size, buckets))
             } yield NumericalProfile(NumericalPreprocessedProfile(modelVersionId, name, sum, size, squaresSum, fourthPowersSum, missing, min, max, histogramBins, hyperLogLog, countMinSketch))
+            case "text" => for {
+              modelVersionId  <- doc.get("modelVersionId").map(_.asInt64().longValue())
+              name            <- doc.get("name").map(_.asString().getValue)
+              size            <- doc.get("size").map(_.asInt64().longValue())
+              missing         <- doc.get("missing").map(_.asInt64().longValue())
+              sentimentSum    <- doc.get("sentimentSum").map(_.asInt64().longValue())
+              lengthSum       <- doc.get("lengthSum").map(_.asInt64().longValue())
+              tokenLengthSum  <- doc.get("tokenLengthSum").map(_.asInt64().longValue())
+              treeDepthSum    <- doc.get("treeDepthSum").map(_.asInt64().longValue())
+              uniqueLemmaSum  <- doc.get("uniqueLemmasSum").map(_.asDouble().doubleValue())
+              languagesSum    <- doc.get("languagesSum").map(d => d.asDocument().entrySet().asScala.map(e => e.getKey -> e.getValue.asInt64().longValue()).toMap)
+              posTagSum       <- doc.get("posTagSum").map(d => d.asDocument().entrySet().asScala.map(e => e.getKey -> e.getValue.asInt64().longValue()).toMap)
+              hyperLogLog     <- doc.get("tokenHyperLogLog").map(d => Document(d.asDocument().toJson)).flatMap(hll => for {
+                size <- hll.get("size").map(_.asInt32().intValue())
+                buckets <- hll.get("buckets").map(_.asDocument().entrySet().asScala.map(e => e.getKey.toInt -> e.getValue.asInt32().intValue()).toMap)
+              } yield HyperLogLog(size, buckets))
+            } yield TextProfile(TextPreprocessedProfile(modelVersionId, name, size, missing, sentimentSum, lengthSum, tokenLengthSum, treeDepthSum, uniqueLemmaSum, languagesSum, posTagSum, hyperLogLog))
           }}
         }
       })
@@ -203,7 +252,11 @@ class ProfileStorageServiceMongoInterpreter[F[_]: Async](config: Configuration, 
       updateDocument = numericalUpdateDocument(p, objectId)
       _ <- saveDocument(updateDocument, objectId, profileSourceKind)
     } yield Unit
-    case _: TextPreprocessedProfile => ???
+    case p: TextPreprocessedProfile => for {
+      objectId <- getObjectId(p.modelVersionId, p.name)
+      updateDocument = textUpdateDocument(p, objectId)
+      _ <- saveDocument(updateDocument, objectId, profileSourceKind)
+    } yield Unit
   }
 
   override def getPreprocessedDistinctNames(modelVersionId: Long, sourceKind: ProfileSourceKind): F[Seq[String]] = mongoClient.use { client =>

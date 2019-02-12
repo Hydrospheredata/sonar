@@ -30,6 +30,11 @@ APP_OPTS=""
 [[ -z "$SUBSAMPLING_TYPE" ]] && SUBSAMPLING_TYPE="reservoir"
 [[ -z "$SUBSAMPLING_SIZE" ]] && SUBSAMPLING_SIZE="1000"
 
+[[ -z "$PROFILE_TEXT_TAGGER_PATH" ]] && PROFILE_TEXT_TAGGER_PATH="/data/models/english-left3words-distsim.tagger"
+[[ -z "$PROFILE_TEXT_SHIFT_REDUCE_PARSER_PATH" ]] && PROFILE_TEXT_SHIFT_REDUCE_PARSER_PATH="/data/srparser/englishSR.beam.ser.gz"
+[[ -z "$PROFILE_TEXT_LEXPARSER_PATH" ]] && PROFILE_TEXT_LEXPARSER_PATH="/data/lexparser/englishPCFG.ser.gz"
+[[ -z "$PROFILE_TEXT_SENTIMENT_PATH" ]] && PROFILE_TEXT_SENTIMENT_PATH="/data/sentiment/sentiment.ser.gz" 
+
 if [[ "$CUSTOM_CONFIG" = "" ]]
 then
     echo "Custom config does not exist"
@@ -43,6 +48,7 @@ then
     [[ ! -z "$MONGO_AUTH_DB" ]] && APP_OPTS="$APP_OPTS -Dmongo.auth-db=$MONGO_AUTH_DB"
     APP_OPTS="$APP_OPTS -Dsidecar.host=$SIDECAR_HOST -Dsidecar.grpc-port=$SIDECAR_GRPC_PORT -Dsidecar.http-port=$SIDECAR_HTTP_PORT"
     APP_OPTS="$APP_OPTS -Dsubsampling.type=$SUBSAMPLING_TYPE -Dsubsampling.size=$SUBSAMPLING_SIZE"
+    APP_OPTS="$APP_OPTS -Dprofile.text.tagger-path=$PROFILE_TEXT_TAGGER_PATH -Dprofile.text.shift-reduce-parser-path=$PROFILE_TEXT_SHIFT_REDUCE_PARSER_PATH -Dprofile.text.lex-parser-path=$PROFILE_TEXT_LEXPARSER_PATH -Dprofile.text.sentiment-path=$PROFILE_TEXT_SENTIMENT_PATH"
 
     echo "APP_OPTS=$APP_OPTS"
 else

@@ -11,7 +11,15 @@ object ExecutionInformationOps {
         r <- ei.request
         input <- r.inputs.get(input)
       } yield input.toDoubles
-      maybeFlat.getOrElse(Seq.empty[Double])
+      maybeFlat.getOrElse(Seq.empty)
+    }
+    
+    def getStringInput(input: String): Seq[String] = {
+      val maybeFlat = for {
+        r <- ei.request
+        input <- r.inputs.get(input)
+      } yield input.toStrings
+      maybeFlat.getOrElse(Seq.empty)
     }
   }
   

@@ -70,6 +70,8 @@ object Dependencies {
   
   val mongo: ModuleID = "org.mongodb.scala" %% "mongo-scala-driver" % "2.5.0"
   
+  val nlp: ModuleID = "edu.stanford.nlp" % "stanford-corenlp" % "3.9.2"
+  
   val projectDeps: Seq[ModuleID] = 
-    logback ++ circe ++ finch ++ doobie ++ grpc ++ pureconfig ++ akka ++ cats ++ math ++ refined :+ flyway :+ hashing :+ enumeratum :+ influx :+ mongo
+    logback ++ circe ++ finch ++ doobie ++ grpc ++ pureconfig ++ akka ++ cats ++ math ++ refined :+ flyway :+ hashing :+ enumeratum :+ influx :+ mongo :+ nlp
 }
