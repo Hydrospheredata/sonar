@@ -60,7 +60,7 @@ class MetricStorageServiceInfluxInterpreter[F[_]: Async](config: Configuration) 
       name = name, 
       value = record("value").asInstanceOf[BigDecimal].toDouble, 
       labels = Map("modelVersionId" -> record("modelVersionId").toString),
-      health = Option(record("health")).map(_.asInstanceOf[Boolean]),
+      health = Option(record("health")).map(_.asInstanceOf[BigDecimal].toDouble == 1d),
       timestamp = Instant.parse(record("time").toString).getEpochSecond
     )
   }
