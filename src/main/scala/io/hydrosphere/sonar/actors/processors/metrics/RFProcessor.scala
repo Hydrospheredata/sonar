@@ -34,7 +34,7 @@ class RFProcessor(context: ActorContext[Processor.MetricMessage], metricSpec: RF
           )
           val metric = Metric("randomforest", score, labels, health)
           saveTo ! MetricWriter.ProcessedMetric(Seq(metric))
-        case Left(exc) => context.log.error(exc, s"Error while requesting RF prediction (${metricSpec.config.applicationName} -> ${metricSpec.config.applicationSignature}) for modelVersion ${metricSpec.modelVersionId}")
+        case Left(exc) => context.log.error(exc, s"Error while requesting RF prediction (${metricSpec.config.applicationName}) for modelVersion ${metricSpec.modelVersionId}")
       }
       this
   }

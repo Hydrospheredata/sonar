@@ -35,7 +35,7 @@ class AEProcessor(context: ActorContext[Processor.MetricMessage], metricSpec: AE
               "trace" -> Traces.single(payload)),
             health)
           saveTo ! MetricWriter.ProcessedMetric(Seq(metric))
-        case Left(exc) => context.log.error(exc, s"Error while requesting AE (${metricSpec.config.applicationName} -> ${metricSpec.config.applicationSignature}) prediction for modelVersion ${metricSpec.modelVersionId}")
+        case Left(exc) => context.log.error(exc, s"Error while requesting AE (${metricSpec.config.applicationName}) prediction for modelVersion ${metricSpec.modelVersionId}")
       }
       this
   }

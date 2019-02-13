@@ -35,7 +35,7 @@ class GANProcessor(context: ActorContext[Processor.MetricMessage], metricSpec: G
             Metric("gan_inlier", inlier, labels, health)
           )
           saveTo ! MetricWriter.ProcessedMetric(metrics)
-        case Left(exc) => context.log.error(exc, s"Error while requesting GAN (${metricSpec.config.applicationName} -> ${metricSpec.config.applicationSignature}) prediction for modelVersion ${metricSpec.modelVersionId}")
+        case Left(exc) => context.log.error(exc, s"Error while requesting GAN (${metricSpec.config.applicationName}) prediction for modelVersion ${metricSpec.modelVersionId}")
       }
       this
   }
