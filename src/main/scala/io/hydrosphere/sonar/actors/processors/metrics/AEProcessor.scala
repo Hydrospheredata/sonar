@@ -18,7 +18,7 @@ class AEProcessor(context: ActorContext[Processor.MetricMessage], metricSpec: AE
   override def onMessage(msg: MetricMessage): Behavior[MetricMessage] = msg match {
     case MetricRequest(payload, saveTo) =>
       context.log.debug(s"Computing AE: $payload")
-      predictionService.callApplication(metricSpec.config.applicationName, metricSpec.config.applicationSignature,
+      predictionService.callApplication(metricSpec.config.applicationName,
         inputs = Map(
           "X" -> DoubleTensor(TensorShape.vector(-1), payload.getDoubleInput(metricSpec.config.input)).toProto
         )

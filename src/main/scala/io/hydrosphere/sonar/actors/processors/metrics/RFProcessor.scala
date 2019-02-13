@@ -17,7 +17,7 @@ class RFProcessor(context: ActorContext[Processor.MetricMessage], metricSpec: RF
   override def onMessage(msg: MetricMessage): Behavior[MetricMessage] = msg match {
     case MetricRequest(payload, saveTo) =>
       context.log.debug(s"Computing RF: $payload")
-      predictionService.callApplication(metricSpec.config.applicationName, metricSpec.config.applicationSignature,
+      predictionService.callApplication(metricSpec.config.applicationName,
         inputs = Map(
           "features" -> DoubleTensor(TensorShape.vector(-1), payload.getDoubleInput(metricSpec.config.input)).toProto
         )

@@ -15,7 +15,7 @@ class GANProcessor(context: ActorContext[Processor.MetricMessage], metricSpec: G
   override def onMessage(msg: Processor.MetricMessage): Behavior[Processor.MetricMessage] = msg match {
     case Processor.MetricRequest(payload, saveTo) =>
       context.log.debug(s"Computing GAN: $payload")
-      predictionService.callApplication(metricSpec.config.applicationName, metricSpec.config.applicationSignature,
+      predictionService.callApplication(metricSpec.config.applicationName,
         inputs = Map(
           "client_profile" -> DoubleTensor(TensorShape.vector(-1), payload.getDoubleInput(metricSpec.config.input)).toProto
         )
