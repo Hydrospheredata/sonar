@@ -22,7 +22,6 @@ import scala.concurrent.ExecutionContext
 import scala.util.Try
 
 trait BatchProfileService[F[_], S[_[_], _]] {
-//  def batchCsvProcess(stream: S[F, String], modelVersion: ModelVersion): F[Unit]
   def batchCsvProcess(path: String, modelVersion: ModelVersion): F[Unit]
   
   def getProcessingStatus(modelVersionId: Long): F[BatchProfileService.ProcessingStatus]
@@ -78,12 +77,12 @@ class BatchProfileServiceInterpreter(config: Configuration, state: Ref[IO, Map[L
       .map(_.getOrElse(Map.empty))
       .map(_.filterKeys(key => modelVersion.dataTypes.contains(key)))
       .filter(_.nonEmpty)
-      .sliding(1000)
+      .chunkN(100)
       .flatMap(mapRows => {
         val numericalInputs = modelVersion.dataTypes.filter({ case (_, tpe) => tpe == DataProfileType.NUMERICAL }).keys.toSet
         val profiles = for {
           input <- numericalInputs
-          flat = mapRows.map(_.getOrElse(input, Seq.empty).map(x => Try(x.toDouble).getOrElse(Double.NaN)))
+          flat = mapRows.toList.map(_.getOrElse(input, Seq.empty).map(x => Try(x.toDouble).getOrElse(Double.NaN)))
           transposed = CollectionOps.safeTranspose(flat).zipWithIndex
           (column, idx) <- transposed
         } yield NumericalProfileUtils.fromColumn(modelVersion.id, input, idx, column)
@@ -96,22 +95,6 @@ class BatchProfileServiceInterpreter(config: Configuration, state: Ref[IO, Map[L
         logger.error("Error in stream", e)
         state.modify(st => (st.updated(modelVersion.id, ProcessingStatus.Failure), ()))
       }
-  
-//  override def batchCsvProcess(stream: fs2.Stream[IO, String], modelVersion: ModelVersion): IO[Unit] = for {
-//    st <- state.get
-//    status = st.getOrElse(modelVersion.id, ProcessingStatus.NotRegistered)
-//    _ <- status match {
-//      case _ @ (ProcessingStatus.Success | ProcessingStatus.Failure | ProcessingStatus.NotRegistered) =>
-//        state.modify(s => (s.updated(modelVersion.id, ProcessingStatus.Processing), Unit)) *> 
-//          IO.async((cb: Either[Throwable, Unit] => Unit) => {
-//            startProcess(stream, modelVersion).unsafeRunAsyncAndForget()
-//            cb(Right(Unit))
-//          })
-//      case ProcessingStatus.Processing => 
-//        IO.raiseError(ProfileIsAlreadyProcessing(modelVersion.id))
-//    }
-//  } yield Unit
-
 
   override def batchCsvProcess(path: String, modelVersion: ModelVersion): IO[Unit] = for {
     st <- state.get
