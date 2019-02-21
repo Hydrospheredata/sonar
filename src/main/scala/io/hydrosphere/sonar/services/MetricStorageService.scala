@@ -12,6 +12,7 @@ import io.hydrosphere.sonar.terms.Metric
 import io.hydrosphere.sonar.utils.FutureOps._
 
 import scala.concurrent.ExecutionContext.Implicits.global
+import scala.util.Try
 
 trait MetricStorageService[F[_]] {
   def saveMetrics(metrics: Seq[Metric]): F[Unit]
@@ -59,7 +60,12 @@ class MetricStorageServiceInfluxInterpreter[F[_]: Async](config: Configuration) 
     Metric(
       name = name, 
       value = record("value").asInstanceOf[BigDecimal].toDouble, 
-      labels = Map("modelVersionId" -> record("modelVersionId").toString),
+      labels = Map(
+        "modelVersionId" -> record("modelVersionId").toString,
+        "columnIndex" -> Try(record("columnIndex").toString).getOrElse(""),
+        "traces" -> Try(record("traces").toString).getOrElse(""),
+        "trace" -> Try(record("trace").toString).getOrElse("")
+      ),
       health = Option(record("health")).map(_.asInstanceOf[BigDecimal].toDouble == 1d),
       timestamp = Instant.parse(record("time").toString).getEpochSecond
     )
@@ -68,7 +74,7 @@ class MetricStorageServiceInfluxInterpreter[F[_]: Async](config: Configuration) 
   override def getMetrics(modelVersionId: Long, interval: Long, metrics: Seq[String], columnIndex: Option[String]): F[Seq[Metric]] = {
     val columnIndexClause = columnIndex.map(ci => s""" AND "columnIndex" = '$ci' """).getOrElse("")
     
-    val query = s"""SELECT "value", "health", "modelVersionId"::tag, "columnIndex"::tag FROM ${metrics.mkString(",")} WHERE "modelVersionId" = '$modelVersionId' AND time >= now() - ${interval / 60000}m $columnIndexClause"""
+    val query = s"""SELECT "value", "health", "modelVersionId"::tag, "columnIndex"::tag, "traces"::tag, "trace"::tag FROM ${metrics.mkString(",")} WHERE "modelVersionId" = '$modelVersionId' AND time >= now() - ${interval / 60000}m $columnIndexClause"""
     
     database.use { db =>
       db.query(query)
