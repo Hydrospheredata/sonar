@@ -254,3 +254,34 @@ GET /monitoring/fields/{model-version-id}
     ...
 ]
 ```
+
+### Training data upload
+
+#### Start processing
+
+```
+POST /monitoring/profiles/batch/{model-version-id}
+Transfer-Encoding: chunked
+<chunked csv-body>
+
+200 OK
+"ok"
+```
+
+#### Get processing status
+
+```
+GET /monitoring/profiles/batch/{model-version-id}/status
+
+200 OK
+{
+    "kind": string
+}
+```
+
+##### Statuses:
+- Success
+- Failure
+- Processing
+- NotRegistered
+

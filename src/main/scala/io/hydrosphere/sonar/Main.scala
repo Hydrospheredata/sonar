@@ -35,8 +35,8 @@ object Dependencies {
   def metricService[F[_]: Sync](transactor: Transactor[F]): F[MetricSpecService[F]] = 
     Sync[F].delay(new MetricSpecServiceInterpreter[F](transactor))
  
-  def httpService[F[_]: Effect](metricSpecService: MetricSpecService[F], metricStorageService: MetricStorageService[F], profileStorageService: ProfileStorageService[F]): F[HttpService[F]] = 
-    Effect[F].delay(new HttpService[F](metricSpecService, metricStorageService, profileStorageService))
+  def httpService[F[_]: Effect](metricSpecService: MetricSpecService[F], metricStorageService: MetricStorageService[F], profileStorageService: ProfileStorageService[F], modelDataService: ModelDataService[F], batchProfileService: BatchProfileService[F, fs2.Stream])(implicit cs: ContextShift[F]): F[HttpService[F]] = 
+    Effect[F].delay(new HttpService[F](metricSpecService, metricStorageService, profileStorageService, modelDataService, batchProfileService))
   
   def modelDataService[F[_]: Async](config: Configuration): F[ModelDataService[F]] = for {
     state <- Ref.of[F, Map[Long, ModelVersion]](Map.empty)
@@ -53,6 +53,14 @@ object Dependencies {
     state <- Ref.of[F, ProfileStorageServiceMongoInterpreter.ObjectIdState](Map.empty)
     instance <- Async[F].delay(new ProfileStorageServiceMongoInterpreter[F](config, state))
   } yield instance
+  
+  def batchProfileService(config: Configuration, profileStorageService: ProfileStorageService[IO]): IO[BatchProfileService[IO, fs2.Stream]] = {
+    implicit val cs: ContextShift[IO] = IO.contextShift(ExecutionContext.fromExecutor(Executors.newFixedThreadPool(10)))
+    for {
+      state <- Ref.of[IO, Map[Long, BatchProfileService.ProcessingStatus]](Map.empty)
+      instance <- IO.delay(new BatchProfileServiceInterpreter(config, state, profileStorageService))
+    } yield instance
+  }
 }
 
 object Main extends IOApp with Logging {
@@ -91,8 +99,9 @@ object Main extends IOApp with Logging {
     metricSpecService <- Dependencies.metricService[IO](transactor)
     metricStorageService <- Dependencies.metricStorageService[IO](config)
     profileStorageService <- Dependencies.profileStorageService[IO](config)
-    httpService <- Dependencies.httpService[IO](metricSpecService, metricStorageService, profileStorageService)
     modelDataService <- Dependencies.modelDataService[IO](config)
+    batchProfileService <- Dependencies.batchProfileService(config, profileStorageService)
+    httpService <- Dependencies.httpService[IO](metricSpecService, metricStorageService, profileStorageService, modelDataService, batchProfileService)
     predictionService <- Dependencies.predictionService[IO](config)
     
     _ <- runDbMigrations[IO](config)
@@ -102,7 +111,7 @@ object Main extends IOApp with Logging {
     grpc <- runGrpcServer[IO](config, new MonitoringServiceGrpcApi(actorSystem))
     _ <- IO(logger.info(s"GRPC server started on port ${grpc.getPort}"))
     
-    http <- IO(Http.serve(s"${config.http.host}:${config.http.port}", httpService.api))
+    http <- IO(Http.server.withStreaming(true).serve(s"${config.http.host}:${config.http.port}", httpService.api))
     _ <- IO(logger.info(s"HTTP server started on ${http.boundAddress}"))
   } yield ExitCode.Success
 }

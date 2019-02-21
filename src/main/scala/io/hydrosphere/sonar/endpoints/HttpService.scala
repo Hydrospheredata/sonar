@@ -1,6 +1,8 @@
 package io.hydrosphere.sonar.endpoints
 
+import java.io.File
 import java.util.UUID
+import java.util.concurrent.Executors
 
 import cats._
 import cats.data.NonEmptyList
@@ -9,17 +11,21 @@ import cats.implicits._
 import com.twitter.finagle.Service
 import com.twitter.finagle.http.filter.Cors
 import com.twitter.finagle.http.{Request, Response}
-import io.circe._
+import fs2.{text, Stream => Fs2Stream}
+import fs2.io.file
+import io.circe.{Encoder, Json}
 import io.circe.parser.decode
 import io.circe.generic.extras.{Configuration => CirceExtraConfiguration}
 import io.circe.generic.extras.auto._
 import io.finch._
+import io.finch.fs2._
 import io.finch.circe._
-import io.hydrosphere.sonar.services.{MetricSpecService, MetricStorageService, ProfileStorageService}
-import io.hydrosphere.sonar.utils.MetricSpecNotFound
+import io.hydrosphere.sonar.services._
+import io.hydrosphere.sonar.utils.{CsvRowSizeMismatch, MetricSpecNotFound}
 import io.hydrosphere.sonar.Logging
 import io.hydrosphere.sonar.terms.{MetricSpec, Profile, ProfileSourceKind}
 
+import scala.concurrent.ExecutionContext
 import scala.util.control.NonFatal
 
 case class ProfileResponse(training: Option[Profile], production: Option[Profile])
@@ -28,7 +34,13 @@ case class ProfileResponse(training: Option[Profile], production: Option[Profile
 case class Test(i: Int, s: String = UUID.randomUUID().toString, r: Double = scala.util.Random.nextDouble())
 
 //noinspection TypeAnnotation
-class HttpService[F[_] : Monad : Effect](metricSpecService: MetricSpecService[F], metricStorageService: MetricStorageService[F], profileStorageService: ProfileStorageService[F]) extends Logging with Endpoint.Module[F] {
+class HttpService[F[_] : Monad : Effect](
+  metricSpecService: MetricSpecService[F], 
+  metricStorageService: MetricStorageService[F], 
+  profileStorageService: ProfileStorageService[F], 
+  modelDataService: ModelDataService[F], 
+  batchProfileService: BatchProfileService[F, Fs2Stream]
+)(implicit cs: ContextShift[F]) extends Logging with Endpoint.Module[F] {
 
   implicit val genDevConfig: CirceExtraConfiguration =
     CirceExtraConfiguration.default.withDefaults.withDiscriminator("kind")
@@ -47,15 +59,6 @@ class HttpService[F[_] : Monad : Effect](metricSpecService: MetricSpecService[F]
       }
     case e: Exception => encodeErrorList(NonEmptyList.one(e))
   })
-
-  // TODO: remove after research
-  def test = get("monitoring" :: "test" :: jsonBody[Test]) { test: Test =>
-    println(decode[Test]("""{"i": 1}"""))
-    println(decode[Test]("""{"i": 1}"""))
-    println(decode[Test]("""{"i": 1}"""))
-    println(decode[Test]("""{"i": 1}"""))
-    Ok(test).pure[F]
-  }
 
   def healthCheck: Endpoint[F, String] = get("health") {
     Ok("ok").pure[F]
@@ -99,14 +102,40 @@ class HttpService[F[_] : Monad : Effect](metricSpecService: MetricSpecService[F]
       production <- profileStorageService.getPreprocessedDistinctNames(modelVersionId, ProfileSourceKind.Production)
     } yield Ok((training ++ production).distinct.sorted)
   }
-
-  def endpoints = (healthCheck :+: createMetricSpec :+: getMetricSpecById :+: getAllMetricSpecs :+: getMetricSpecsByModelVersion :+: getMetrics :+: getProfiles :+: getProfileNames :+: test) handle {
+  
+  def batchProfile = post("monitoring" :: "profiles" :: "batch" :: path[Long] :: stringBodyStream[Fs2Stream]) { (modelVersionId: Long, stream: Fs2Stream[F, String]) =>
+    for {
+      modelVersion <- modelDataService.getModelVersion(modelVersionId)
+      tempFile = {
+        val f = File.createTempFile("training_data", modelVersionId.toString)
+        f.deleteOnExit()
+        f.toPath
+      }
+      executionContext = ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(2))
+      _ <- stream
+            .through(text.utf8Encode)
+            .through(file.writeAll(tempFile, executionContext))
+            .compile
+            .drain
+      _ <- Effect[F].delay(println(tempFile))
+      _ <- batchProfileService.batchCsvProcess(tempFile.toString, modelVersion)
+    } yield Ok("ok")
+  }
+  
+  def getBatchStatus = get("monitoring" :: "profiles" :: "batch" :: path[Long] :: "status") { modelVersionId: Long =>
+    batchProfileService.getProcessingStatus(modelVersionId).map(Ok)
+  }
+  
+  def endpoints = (healthCheck :+: createMetricSpec :+: getMetricSpecById :+: getAllMetricSpecs :+: getMetricSpecsByModelVersion :+: getMetrics :+: getProfiles :+: getProfileNames :+: batchProfile :+: getBatchStatus) handle {
     case e: io.finch.Error.NotParsed =>
       logger.warn(s"Can't parse json with message: ${e.getMessage()}")
       BadRequest(new RuntimeException(e))
     case e: MetricSpecNotFound =>
-      logger.warn(s"Could not find MetriSpec with id ${e.id}")
+      logger.warn(s"Could not find MetricSpec with id ${e.id}")
       NotFound(new RuntimeException(e))
+    case e: CsvRowSizeMismatch =>
+      logger.warn("CsvRowSizeMismatch")
+      BadRequest(new RuntimeException(e))
     case NonFatal(e) =>
       logger.error(e.getLocalizedMessage, e)
       InternalServerError(new RuntimeException(e))

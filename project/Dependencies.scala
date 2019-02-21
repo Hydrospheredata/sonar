@@ -23,7 +23,9 @@ object Dependencies {
 
   val finch: Seq[ModuleID] = Seq(
     "com.github.finagle" %% "finchx-core" % FinchV,
-    "com.github.finagle" %% "finchx-circe" % FinchV
+    "com.github.finagle" %% "finchx-circe" % FinchV,
+    "com.github.finagle" %% "finchx-fs2" % FinchV,
+    "com.github.finagle" %% "finchx-iteratee" % FinchV
   )
 
   val doobie: Seq[ModuleID] = Seq(
@@ -52,6 +54,11 @@ object Dependencies {
     "org.typelevel" %% "cats-effect" % "1.1.0"
   )
   
+  val fs2: Seq[ModuleID] = Seq(
+    "co.fs2" %% "fs2-core" % "1.0.3",
+    "co.fs2" %% "fs2-io" % "1.0.3"
+  )
+  
   val math: Seq[ModuleID] = Seq(
     "org.scalanlp" %% "breeze" % "0.13.2"
   )
@@ -71,5 +78,5 @@ object Dependencies {
   val mongo: ModuleID = "org.mongodb.scala" %% "mongo-scala-driver" % "2.5.0"
   
   val projectDeps: Seq[ModuleID] = 
-    logback ++ circe ++ finch ++ doobie ++ grpc ++ pureconfig ++ akka ++ cats ++ math ++ refined :+ flyway :+ hashing :+ enumeratum :+ influx :+ mongo
+    logback ++ circe ++ finch ++ doobie ++ grpc ++ pureconfig ++ akka ++ cats ++ fs2 ++ math ++ refined :+ flyway :+ hashing :+ enumeratum :+ influx :+ mongo
 }
