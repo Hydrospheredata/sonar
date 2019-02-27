@@ -144,7 +144,7 @@ class HttpService[F[_] : Monad : Effect](
   def api: Service[Request, Response] = {
     val policy: Cors.Policy = Cors.Policy(
       allowsOrigin = _ => Some("*"),
-      allowsMethods = _ => Some(Seq("GET", "POST")),
+      allowsMethods = _ => Some(Seq("GET", "POST", "DELETE")),
       allowsHeaders = _ => Some(Seq("*"))
     )
 
