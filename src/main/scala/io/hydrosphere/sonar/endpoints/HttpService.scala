@@ -84,6 +84,10 @@ class HttpService[F[_] : Monad : Effect](
     metricSpecService.getAllMetricSpecs.map(Ok)
   }
   
+  def deleteMetricSpec = delete("monitoring" :: "metricspec" :: path[String]) { metricSpecId: String =>
+    metricSpecService.remove(metricSpecId).map(_ => Ok("ok"))
+  }
+  
   def getMetrics = get("monitoring" :: "metrics" :: param[Long]("modelVersionId") :: param[Long]("interval") :: params[String]("metrics") :: paramOption[String]("columnIndex")) 
   { (modelVersionId: Long, interval: Long, metrics: List[String], columnIndex: Option[String]) =>
     metricStorageService.getMetrics(modelVersionId, interval, metrics, columnIndex).map(Ok)
