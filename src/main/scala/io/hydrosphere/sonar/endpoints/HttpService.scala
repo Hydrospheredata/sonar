@@ -130,7 +130,7 @@ class HttpService[F[_] : Monad : Effect](
     batchProfileService.getProcessingStatus(modelVersionId).map(Ok)
   }
   
-  def endpoints = (healthCheck :+: createMetricSpec :+: getMetricSpecById :+: getAllMetricSpecs :+: getMetricSpecsByModelVersion :+: getMetrics :+: getProfiles :+: getProfileNames :+: batchProfile :+: getBatchStatus) handle {
+  def endpoints = (healthCheck :+: createMetricSpec :+: getMetricSpecById :+: getAllMetricSpecs :+: getMetricSpecsByModelVersion :+: getMetrics :+: getProfiles :+: getProfileNames :+: batchProfile :+: getBatchStatus :+: deleteMetricSpec) handle {
     case e: io.finch.Error.NotParsed =>
       logger.warn(s"Can't parse json with message: ${e.getMessage()}")
       BadRequest(new RuntimeException(e))
