@@ -20,7 +20,7 @@ class AEProcessor(context: ActorContext[Processor.MetricMessage], metricSpec: AE
       context.log.debug(s"Computing AE: $payload")
       predictionService.callApplication(metricSpec.config.applicationName,
         inputs = Map(
-          "X" -> DoubleTensor(TensorShape.vector(-1), payload.getDoubleInput(metricSpec.config.input)).toProto
+          "X" -> DoubleTensor(TensorShape.mat(-1, 112), payload.getDoubleInput(metricSpec.config.input)).toProto
         )
       ).unsafeRunAsync {
         case Right(value) => 
