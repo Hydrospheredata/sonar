@@ -4,6 +4,8 @@ name := "sonar"
 
 scalaVersion := "2.12.7"
 
+version := sys.props.getOrElse("appVersion", "latest")
+
 scalacOptions ++= Seq(
   "-unchecked",
   "-deprecation",
