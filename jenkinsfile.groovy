@@ -1,4 +1,4 @@
-def repository = 'provectus/sonar'
+def repository = 'provectus/sonar2'
 
 def buildAndPublishReleaseFunction = {
     //Buid app
