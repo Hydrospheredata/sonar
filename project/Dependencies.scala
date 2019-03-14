@@ -37,7 +37,7 @@ object Dependencies {
 
   val grpc: Seq[ModuleID] = Seq(
     "io.grpc" % "grpc-netty" % "1.18.0",
-    "io.hydrosphere" %% "serving-grpc-scala" % "2.0.0a1"
+    "io.hydrosphere" %% "serving-grpc-scala" % "2.0.0rc5"
   )
 
   val pureconfig: Seq[ModuleID] = Seq(
