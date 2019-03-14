@@ -97,10 +97,16 @@ class SonarSupervisor(context: ActorContext[SonarSupervisor.Message])(implicit c
           // Each DataProfileType *can* have a processor, otherwise it will be ignored
           modelDataService.getModelVersion(modelVersionId).unsafeRunAsync {
             case Right(modelVersion) =>
-              val modelDataTypes = modelVersion.dataTypes.values.toList 
-              if (modelDataTypes.contains(DataProfileType.NUMERICAL)) {
-                val actor = getOrCreateProfileActor(Behaviors.setup(ctx => NumericalProfileProcessor.behavior(ctx, modelVersion, profileWriter, 1 minute, 10)), modelVersionId, DataProfileType.NUMERICAL)
-                actor ! Processor.ProfileRequest(payload)
+              modelVersion.contract.flatMap(_.predict) match {
+                case Some(signature) =>
+                  val inputs = signature.inputs.map(_.profile)
+                  val modelDataTypes = inputs
+                  if (modelDataTypes.contains(DataProfileType.NUMERICAL)) {
+                    val actor = getOrCreateProfileActor(Behaviors.setup(ctx => NumericalProfileProcessor.behavior(ctx, modelVersion, profileWriter, 1 minute, 10)), modelVersionId, DataProfileType.NUMERICAL)
+                    actor ! Processor.ProfileRequest(payload)
+                  }
+                case None =>
+                  context.log.error(s"Tried to access ModelVersion without predict signature")
               }
             case Left(exc) => context.log.error(exc, s"Error while getting ModelVersion")
           }

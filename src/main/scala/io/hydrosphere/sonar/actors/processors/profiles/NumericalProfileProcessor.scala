@@ -1,7 +1,5 @@
 package io.hydrosphere.sonar.actors.processors.profiles
 
-import java.math.{MathContext, RoundingMode}
-
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import akka.actor.typed.{ActorRef, Behavior}
 import io.hydrosphere.serving.manager.data_profile_types.DataProfileType
@@ -11,13 +9,10 @@ import io.hydrosphere.serving.tensorflow.api.predict.PredictRequest
 import io.hydrosphere.sonar.actors.Processor
 import io.hydrosphere.sonar.actors.Processor.ProfileRequest
 import io.hydrosphere.sonar.actors.writers.ProfileWriter
-import io.hydrosphere.sonar.terms.NumericalPreprocessedProfile
-import io.hydrosphere.sonar.utils.math.{MutableCountMinSketch, MutableHyperLogLog}
 import io.hydrosphere.sonar.utils.CollectionOps
 import io.hydrosphere.sonar.utils.ExecutionInformationOps._
 import io.hydrosphere.sonar.utils.profiles.NumericalProfileUtils
 
-import scala.collection.mutable
 import scala.concurrent.duration.FiniteDuration
 
 object NumericalProfileProcessor {
@@ -26,7 +21,13 @@ object NumericalProfileProcessor {
   case object Timeout extends Processor.ProfileMessage
   
   def numericalInputs(modelVersion: ModelVersion): Set[String] = {
-    modelVersion.dataTypes.filter({ case (_, tpe) => tpe == DataProfileType.NUMERICAL }).keys.toSet
+    modelVersion
+      .contract.flatMap(_.predict)
+      .map(_.inputs)
+      .getOrElse(Seq.empty)
+      .filter(x => x.profile == DataProfileType.NUMERICAL)
+      .map(_.name)
+      .toSet
   }
   
   def filterRequest(request: Processor.ProfileRequest, modelVersion: ModelVersion): Processor.ProfileRequest = {
