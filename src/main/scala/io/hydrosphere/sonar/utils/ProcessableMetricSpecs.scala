@@ -20,7 +20,11 @@ object ProcessableMetricSpecs {
   implicit def processableAE(implicit predictionService: PredictionService[IO]): Processable[AEMetricSpec] = (t: AEMetricSpec) => Behaviors.setup(context => {
     new AEProcessor(context, t)
   })
-  
+
+  implicit def processableImageAE(implicit predictionService: PredictionService[IO]): Processable[ImageAEMetricSpec] = (t: ImageAEMetricSpec) => Behaviors.setup(context => {
+    new ImageAEProcessor(context, t)
+  })
+
   implicit def processableGAN(implicit predictionService: PredictionService[IO]): Processable[GANMetricSpec] = (t: GANMetricSpec) => Behaviors.setup(context => {
     new GANProcessor(context, t)
   })
