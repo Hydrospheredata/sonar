@@ -82,6 +82,7 @@ class SonarSupervisor(context: ActorContext[SonarSupervisor.Message])(implicit c
       context.log.debug(s"Got Request: $payload".slice(0, 1024))
       payload.metadata match {
         case Some(metadata) =>
+          context.log.info(s"$metadata")
           val modelVersionId = metadata.modelVersionId
           // Concept drift metrics
           // Each MetricSpec *must* have an appropriate processor
