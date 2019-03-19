@@ -11,6 +11,8 @@ import io.hydrosphere.sonar.services.PredictionService
 import io.hydrosphere.sonar.terms.{AEMetricSpec, Metric}
 import io.hydrosphere.sonar.utils.ExecutionInformationOps._
 
+import scala.util.Try
+
 class AEProcessor(context: ActorContext[Processor.MetricMessage], metricSpec: AEMetricSpec)(implicit predictionService: PredictionService[IO]) extends AbstractBehavior[Processor.MetricMessage] {
 
   import Processor._
@@ -25,7 +27,7 @@ class AEProcessor(context: ActorContext[Processor.MetricMessage], metricSpec: AE
       ).unsafeRunAsync {
         case Right(value) => 
           context.log.info(s"${value.outputs.get("reconstructed")}")
-          val reconstructed = value.outputs.get("reconstructed").flatMap(_.doubleVal.headOption).getOrElse(0d)
+          val reconstructed = value.outputs.get("reconstructed").flatMap(x => Try(x.floatVal.max).toOption).getOrElse(0d)
           val health = if (metricSpec.withHealth) {
             Some(reconstructed <= metricSpec.config.threshold.getOrElse(Double.MaxValue))
           } else None
