@@ -39,7 +39,11 @@ object LatencyProcessor {
       case m: Processor.MetricRequest =>
         val (sumDelta, countDelta) = m.payload.responseOrError match {
           case ResponseOrError.Response(value) =>
-            val latency = value.internalInfo.get("system.latency").flatMap(x => Try(x.doubleVal).toOption).flatMap(_.headOption)
+            val latency = for {
+              tensor <- value.internalInfo.get("system.latency")
+              l <- Try(tensor.int64Val).toOption
+              head <- l.headOption
+            } yield head.toDouble
             latency match {
               case Some(l) => (l, 1)
               case None =>
