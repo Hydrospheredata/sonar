@@ -15,7 +15,7 @@ import io.hydrosphere.sonar.Logging
 import io.hydrosphere.sonar.config.Configuration
 import io.hydrosphere.sonar.terms.ProfileSourceKind
 import io.hydrosphere.sonar.utils.profiles.NumericalProfileUtils
-import io.hydrosphere.sonar.utils.{CollectionOps, CsvRowSizeMismatch, ProfileIsAlreadyProcessing}
+import io.hydrosphere.sonar.utils.{CollectionOps, ContractOps, CsvRowSizeMismatch, ProfileIsAlreadyProcessing}
 
 import scala.collection.immutable
 import scala.concurrent.ExecutionContext
@@ -75,13 +75,22 @@ class BatchProfileServiceInterpreter(config: Configuration, state: Ref[IO, Map[L
          .mapValues(_.toSeq.sortBy(_._1).map(_._2)))
       )
       .map(_.getOrElse(Map.empty))
-      .map(_.filterKeys(key => modelVersion.dataTypes.contains(key)))
+      .map(_.filterKeys(key => modelVersion.contract
+        .map(ContractOps.extractProfiledFields)
+        .getOrElse(Seq.empty)
+        .exists(_.name == key)
+      ))
       .filter(_.nonEmpty)
       .chunkN(100)
       .flatMap(mapRows => {
-        val numericalInputs = modelVersion.dataTypes.filter({ case (_, tpe) => tpe == DataProfileType.NUMERICAL }).keys.toSet
+        val numericalFields = modelVersion.contract
+          .map(ContractOps.extractAllFields)
+          .getOrElse(Seq.empty)
+          .filter(_.profile == DataProfileType.NUMERICAL)
+          .map(_.name)
+          .toSet
         val profiles = for {
-          input <- numericalInputs
+          input <- numericalFields
           flat = mapRows.toList.map(_.getOrElse(input, Seq.empty).map(x => Try(x.toDouble).getOrElse(Double.NaN)))
           transposed = CollectionOps.safeTranspose(flat).zipWithIndex
           (column, idx) <- transposed
