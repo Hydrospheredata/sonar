@@ -29,6 +29,7 @@ import scala.concurrent.ExecutionContext
 import scala.util.control.NonFatal
 
 case class ProfileResponse(training: Option[Profile], production: Option[Profile])
+case class S3FilePath(path: String)
 
 // TODO: remove after research
 case class Test(i: Int, s: String = UUID.randomUUID().toString, r: Double = scala.util.Random.nextDouble())
@@ -126,11 +127,18 @@ class HttpService[F[_] : Monad : Effect](
     } yield Ok("ok")
   }
   
+  def s3BatchProfile = post("monitoring" :: "profiles" :: "batch" :: path[Long] :: jsonBody[S3FilePath]) { (modelVersionId: Long, s3FilePath: S3FilePath) => 
+    for {
+      modelVersion <- modelDataService.getModelVersion(modelVersionId)
+      _ <- batchProfileService.batchCsvProcess(s3FilePath.path, modelVersion)
+    } yield Ok("ok")
+  }
+  
   def getBatchStatus = get("monitoring" :: "profiles" :: "batch" :: path[Long] :: "status") { modelVersionId: Long =>
     batchProfileService.getProcessingStatus(modelVersionId).map(Ok)
   }
   
-  def endpoints = (healthCheck :+: createMetricSpec :+: getMetricSpecById :+: getAllMetricSpecs :+: getMetricSpecsByModelVersion :+: getMetrics :+: getProfiles :+: getProfileNames :+: batchProfile :+: getBatchStatus :+: deleteMetricSpec) handle {
+  def endpoints = (healthCheck :+: createMetricSpec :+: getMetricSpecById :+: getAllMetricSpecs :+: getMetricSpecsByModelVersion :+: getMetrics :+: getProfiles :+: getProfileNames :+: batchProfile :+: getBatchStatus :+: deleteMetricSpec :+: s3BatchProfile) handle {
     case e: io.finch.Error.NotParsed =>
       logger.warn(s"Can't parse json with message: ${e.getMessage()}")
       BadRequest(new RuntimeException(e))

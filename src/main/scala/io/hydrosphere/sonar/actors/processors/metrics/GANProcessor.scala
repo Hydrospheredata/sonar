@@ -17,7 +17,7 @@ class GANProcessor(context: ActorContext[Processor.MetricMessage], metricSpec: G
       context.log.debug(s"Computing GAN: $payload")
       predictionService.callApplication(metricSpec.config.applicationName,
         inputs = Map(
-          "client_profile" -> DoubleTensor(TensorShape.vector(-1), payload.getDoubleInput(metricSpec.config.input)).toProto
+          "client_profile" -> DoubleTensor(TensorShape.vector(112), payload.getDoubleInput(metricSpec.config.input)).toProto
         )
       ).unsafeRunAsync {
         case Right(value) =>

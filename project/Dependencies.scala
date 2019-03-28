@@ -56,7 +56,8 @@ object Dependencies {
   
   val fs2: Seq[ModuleID] = Seq(
     "co.fs2" %% "fs2-core" % "1.0.3",
-    "co.fs2" %% "fs2-io" % "1.0.3"
+    "co.fs2" %% "fs2-io" % "1.0.3",
+    "io.github.dmateusp" %% "fs2-aws" % "0.27.3"
   )
   
   val math: Seq[ModuleID] = Seq(

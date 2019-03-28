@@ -1,14 +1,17 @@
 package io.hydrosphere.sonar.services
 
-import java.nio.file.{Path, Paths}
+import java.io.InputStream
+import java.nio.file.Paths
 import java.util.concurrent.Executors
 
 import cats.effect._
 import cats.effect.concurrent.Ref
 import cats.implicits._
+import com.amazonaws.services.s3.AmazonS3ClientBuilder
+import com.amazonaws.services.s3.model._
 import enumeratum.{Enum, EnumEntry}
 import fs2.io.file
-import fs2.text
+import fs2.{Chunk, Pull, Stream, text}
 import io.hydrosphere.serving.manager.data_profile_types.DataProfileType
 import io.hydrosphere.serving.manager.grpc.entities.ModelVersion
 import io.hydrosphere.sonar.Logging
@@ -18,8 +21,10 @@ import io.hydrosphere.sonar.utils.profiles.NumericalProfileUtils
 import io.hydrosphere.sonar.utils.{CollectionOps, ContractOps, CsvRowSizeMismatch, ProfileIsAlreadyProcessing}
 
 import scala.collection.immutable
+import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext
 import scala.util.Try
+import scala.util.control.Exception
 
 trait BatchProfileService[F[_], S[_[_], _]] {
   def batchCsvProcess(path: String, modelVersion: ModelVersion): F[Unit]
@@ -41,9 +46,80 @@ object BatchProfileService {
 
 class BatchProfileServiceInterpreter(config: Configuration, state: Ref[IO, Map[Long, BatchProfileService.ProcessingStatus]], profileStorageService: ProfileStorageService[IO])(implicit cs: ContextShift[IO]) extends BatchProfileService[IO, fs2.Stream] with Logging {
   import BatchProfileService._
-  
-  def startProcess(path: Path, modelVersion: ModelVersion): IO[Unit] =
-    file.readAll[IO](path, ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(2)), 2048)
+
+//  trait S3Client[F[_]] {
+//    private lazy val client = AmazonS3ClientBuilder.defaultClient
+//    
+//    def objectResource(getObjectRequest: GetObjectRequest)(implicit F: Effect[F]): Resource[F, S3Object] = 
+//      Resource.make(F.delay(client.getObject(getObjectRequest)))(obj => F.delay(obj.close()))
+//
+//    def getObjectContentOrError(getObjectRequest: GetObjectRequest)(implicit F: Effect[F]): F[Either[Throwable, InputStream]] =
+//      objectResource(getObjectRequest).use(obj => F.delay(Exception.nonFatalCatch either obj.getObjectContent))
+//
+//    def getObjectContent(getObjectRequest: GetObjectRequest)(implicit F: Effect[F]): F[InputStream] =
+//      F.delay(client.getObject(getObjectRequest).getObjectContent)
+//
+//    def initiateMultipartUpload(initiateMultipartUploadRequest: InitiateMultipartUploadRequest)(
+//      implicit F: Effect[F]): F[InitiateMultipartUploadResult] =
+//      F.delay(client.initiateMultipartUpload(initiateMultipartUploadRequest))
+//
+//    def uploadPart(uploadPartRequest: UploadPartRequest)(implicit F: Effect[F]): F[UploadPartResult] =
+//      F.delay(client.uploadPart(uploadPartRequest))
+//
+//    def completeMultipartUpload(completeMultipartUploadRequest: CompleteMultipartUploadRequest)(
+//      implicit F: Effect[F]): F[CompleteMultipartUploadResult] =
+//      F.delay(client.completeMultipartUpload(completeMultipartUploadRequest))
+//
+//    def s3ObjectSummaries(listObjectsV2Request: ListObjectsV2Request)(
+//      implicit F: Effect[F]): F[List[S3ObjectSummary]] =
+//      F.delay(client.listObjectsV2(listObjectsV2Request).getObjectSummaries.asScala.toList)
+//
+//    def getObject(objectRequest: GetObjectRequest)(implicit F: Effect[F]): F[S3Object] = {
+//      F.delay(client.getObject(objectRequest))
+//    }
+//  }
+
+  private lazy val client = AmazonS3ClientBuilder.defaultClient
+
+
+  def readS3FileMultipart[F[_]](
+                                 bucket: String,
+                                 key: String,
+                                 chunkSize: Int,
+                                 )(implicit F: Effect[F]): Stream[F, Byte] = {
+    def go(offset: Int)(implicit F: Effect[F]): Pull[F, Byte, Unit] =
+      Pull
+        .acquire[F, S3Object](F.delay(client.getObject(
+          new GetObjectRequest(bucket, key).withRange(offset, offset + chunkSize)
+        ))) { obj => F.delay(obj.close())
+      }
+        .flatMap { s3 =>
+          Pull.eval(F.delay {
+            val is: InputStream = s3.getObjectContent
+            val buf = new Array[Byte](chunkSize)
+            val len = is.read(buf)
+            is.close()
+            logger.info(s"Read $len bytes from $offset")
+            if (len < chunkSize) None else Some(Chunk.bytes(buf, 0, len))
+          })
+        } 
+        .flatMap {
+          case Some(o) => Pull.output(o) >> go(offset + o.size)
+          case None => Pull.done
+        }
+
+    go(0).stream
+
+  }
+
+
+  def startProcess(path: String, modelVersion: ModelVersion): IO[Unit] =
+    (if (path.startsWith("s3://")) {
+      val parts = path.replaceAll("s3://", "").split("/")
+      readS3FileMultipart[IO](parts.head, parts.tail.mkString("/"), 2048)
+    } else {
+      file.readAll[IO](Paths.get(path), ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(2)), 2048)
+    })
       .through(text.utf8Decode)
       // TODO: parameterize sliding
       .through(text.lines)
@@ -89,17 +165,19 @@ class BatchProfileServiceInterpreter(config: Configuration, state: Ref[IO, Map[L
           .filter(_.profile == DataProfileType.NUMERICAL)
           .map(_.name)
           .toSet
+        logger.info(s"processing ${mapRows.size} csv rows")
         val profiles = for {
           input <- numericalFields
           flat = mapRows.toList.map(_.getOrElse(input, Seq.empty).map(x => Try(x.toDouble).getOrElse(Double.NaN)))
           transposed = CollectionOps.safeTranspose(flat).zipWithIndex
           (column, idx) <- transposed
         } yield NumericalProfileUtils.fromColumn(modelVersion.id, input, idx, column)
-        fs2.Stream.eval(profileStorageService.batchSaveProfiles(profiles.toSeq, ProfileSourceKind.Training))
+        fs2.Stream.eval(profileStorageService.batchSaveProfiles(profiles.toSeq, ProfileSourceKind.Training) *> IO(logger.info("saving batch service profiles was finished")))
       })
       .compile
       .drain
       .flatMap(_ => state.modify(st => (st.updated(modelVersion.id, ProcessingStatus.Success), ())))
+      .flatMap(_ => IO(logger.info("batch profiles was computed")))
       .handleErrorWith { e => 
         logger.error("Error in stream", e)
         state.modify(st => (st.updated(modelVersion.id, ProcessingStatus.Failure), ()))
@@ -112,7 +190,7 @@ class BatchProfileServiceInterpreter(config: Configuration, state: Ref[IO, Map[L
       case _@(ProcessingStatus.Success | ProcessingStatus.Failure | ProcessingStatus.NotRegistered) =>
         state.modify(s => (s.updated(modelVersion.id, ProcessingStatus.Processing), Unit)) *>
           IO.async((cb: Either[Throwable, Unit] => Unit) => {
-            startProcess(Paths.get(path), modelVersion).unsafeRunAsyncAndForget()
+            startProcess(path, modelVersion).unsafeRunAsyncAndForget()
             cb(Right(Unit))
           })
       case ProcessingStatus.Processing =>

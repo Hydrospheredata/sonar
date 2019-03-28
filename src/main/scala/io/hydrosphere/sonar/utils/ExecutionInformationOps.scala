@@ -1,9 +1,10 @@
 package io.hydrosphere.sonar.utils
 
 import io.hydrosphere.serving.monitoring.monitoring.ExecutionInformation
+import io.hydrosphere.sonar.Logging
 import io.hydrosphere.sonar.utils.TensorProtoOps._
 
-object ExecutionInformationOps {
+object ExecutionInformationOps extends Logging {
   
   implicit class ExecutionInformationGetters(ei: ExecutionInformation) {
     def getDoubleInput(input: String): Seq[Double] = {
@@ -11,6 +12,8 @@ object ExecutionInformationOps {
         r <- ei.request
         input <- r.inputs.get(input)
       } yield input.toDoubles
+      logger.info(s"$ei")
+      logger.info(s"$maybeFlat")
       maybeFlat.getOrElse(Seq.empty[Double])
     }
   }

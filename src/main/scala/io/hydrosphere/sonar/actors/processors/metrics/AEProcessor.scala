@@ -27,7 +27,7 @@ class AEProcessor(context: ActorContext[Processor.MetricMessage], metricSpec: AE
       ).unsafeRunAsync {
         case Right(value) => 
           context.log.info(s"${value.outputs.get("reconstructed")}")
-          val reconstructed = value.outputs.get("reconstructed").flatMap(x => Try(x.floatVal.max.toDouble).toOption).getOrElse(0d)
+          val reconstructed = value.outputs.get("reconstructed").flatMap(x => Try(x.floatVal.head.toDouble).toOption).getOrElse(0d)
           val health = if (metricSpec.withHealth) {
             Some(reconstructed <= metricSpec.config.threshold.getOrElse(Double.MaxValue))
           } else None

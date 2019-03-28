@@ -78,14 +78,14 @@ object KSProcessor {
       case m: Processor.MetricRequest => 
         val newBuffer = buffer :+ filterRequest(m, metricSpec.config.input)
         if (newBuffer.size == maxSize) {
-          context.log.debug(s"Processing KS for ${newBuffer.size} elements (max)")
+          context.log.info(s"Processing KS for ${newBuffer.size} elements (max)")
           process(newBuffer, metricSpec)
           active(Vector.empty[Processor.MetricRequest], timers, context, metricSpec, duration, maxSize)
         } else {
           active(newBuffer, timers, context, metricSpec, duration, maxSize)
         }
       case Timeout =>
-        context.log.debug(s"Processing KS for ${buffer.size} elements (timeout)")
+        context.log.info(s"Processing KS for ${buffer.size} elements (timeout)")
         process(buffer, metricSpec)
         active(Vector.empty[Processor.MetricRequest], timers, context, metricSpec, duration, maxSize)
     }

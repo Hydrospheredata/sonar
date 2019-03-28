@@ -70,7 +70,7 @@ object ProfileStorageServiceMongoInterpreter {
 
 import io.hydrosphere.sonar.services.ProfileStorageServiceMongoInterpreter._
 
-class ProfileStorageServiceMongoInterpreter[F[_]: Async](config: Configuration, state: Ref[F, ObjectIdState]) extends ProfileStorageService[F] {
+class ProfileStorageServiceMongoInterpreter[F[_]: Async](config: Configuration, state: Ref[F, ObjectIdState]) extends ProfileStorageService[F] with Logging {
   
   val codecRegistry: CodecRegistry = fromRegistries(
     fromCodecs(new BigDecimalScalaCodec),
@@ -235,8 +235,10 @@ class ProfileStorageServiceMongoInterpreter[F[_]: Async](config: Configuration, 
       case _ => ???
     }
     for {
+      _ <- Sync[F].delay(logger.info(s"Saving batch profiles: ${profiles.size}"))
       docs <- docsF.sequence[F, model.UpdateOneModel[Nothing]]
       _ <- batchSaveDocuments(docs, profileSourceKind)
+      _ <- Sync[F].delay(logger.info(s"${profiles.size} profiles was saved"))
     } yield Unit
   }
 
