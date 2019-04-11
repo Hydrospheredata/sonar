@@ -39,7 +39,6 @@ POST /monitoring/metricspec
 {
     "input": string,
     "applicationName": string,
-    "applicationSignature": string, 
     "threshold": double (optional, only for health)
 }
 ```
@@ -49,7 +48,14 @@ POST /monitoring/metricspec
 {
     "input": string,
     "applicationName": string,
-    "applicationSignature": string,
+    "threshold": double (optional, only for health)
+}
+```
+
+- `imageAEMetricSpec` – Image Autoencoder
+```
+{
+    "applicationName": string,
     "threshold": double (optional, only for health)
 }
 ```
