@@ -88,6 +88,30 @@ class HttpService[F[_] : Monad : Effect](
   def deleteMetricSpec = delete("monitoring" :: "metricspec" :: path[String]) { metricSpecId: String =>
     metricSpecService.remove(metricSpecId).map(_ => Ok("ok"))
   }
+
+  def getMetricsAggregation = get("monitoring"
+    :: "metrics"
+    :: "aggregation"
+    :: param[Long]("modelVersionId")
+    :: params[String]("metrics")
+    :: paramOption[Long]("from")
+    :: paramOption[Long]("till")
+    :: paramOption[Int]("steps")){
+    (modelVersionId:Long, metrics:List[String], from:Option[Long], till:Option[Long], steps:Option[Int]) =>
+      metricStorageService.getMetricsAggregationRange(modelVersionId, metrics, from, till, steps.getOrElse(50)).map(Ok)
+  }
+
+  def getMetricsRange = get("monitoring"
+    :: "metrics"
+    :: "range"
+    :: param[Long]("modelVersionId")
+    :: params[String]("metrics")
+    :: param[Long]("from")
+    :: param[Long]("till")
+    :: paramOption[String]("columnIndex")){
+    (modelVersionId:Long, metrics:List[String], from:Long, till:Long, columnIndex: Option[String]) =>
+      metricStorageService.getMetricsRange(modelVersionId, from, till, metrics, columnIndex).map(Ok)
+  }
   
   def getMetrics = get("monitoring" :: "metrics" :: param[Long]("modelVersionId") :: param[Long]("interval") :: params[String]("metrics") :: paramOption[String]("columnIndex")) 
   { (modelVersionId: Long, interval: Long, metrics: List[String], columnIndex: Option[String]) =>
@@ -138,7 +162,7 @@ class HttpService[F[_] : Monad : Effect](
     batchProfileService.getProcessingStatus(modelVersionId).map(Ok)
   }
   
-  def endpoints = (healthCheck :+: createMetricSpec :+: getMetricSpecById :+: getAllMetricSpecs :+: getMetricSpecsByModelVersion :+: getMetrics :+: getProfiles :+: getProfileNames :+: batchProfile :+: getBatchStatus :+: deleteMetricSpec :+: s3BatchProfile) handle {
+  def endpoints = (healthCheck :+: createMetricSpec :+: getMetricSpecById :+: getAllMetricSpecs :+: getMetricSpecsByModelVersion :+: getMetricsAggregation :+: getMetricsRange :+: getMetrics :+: getProfiles :+: getProfileNames :+: batchProfile :+: getBatchStatus :+: deleteMetricSpec :+: s3BatchProfile) handle {
     case e: io.finch.Error.NotParsed =>
       logger.warn(s"Can't parse json with message: ${e.getMessage()}")
       BadRequest(new RuntimeException(e))
