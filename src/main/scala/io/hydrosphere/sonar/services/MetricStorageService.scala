@@ -27,7 +27,7 @@ trait MetricStorageService[F[_]] {
                                  till: Option[Long] = None,
                                  steps: Int = 50): F[Seq[MetricsAggregation]]
 
-  def getMetricsRange(modelVersionId: Long, from: Long, till:Long, metrics: Seq[String], columnIndex: Option[String]): F[Seq[Metric]]
+  def getMetricsRange(modelVersionId: Long, from: Long, till:Long, metrics: Seq[String], columnIndex: Option[String], health: Option[Int]): F[Seq[Metric]]
 }
 
 class MetricStorageServiceDummyInterpreter[F[_] : Sync] extends MetricStorageService[F] with Logging {
@@ -40,7 +40,7 @@ class MetricStorageServiceDummyInterpreter[F[_] : Sync] extends MetricStorageSer
 
   override def getMetricsAggregationRange(modelVersionId: Long, metrics: Seq[String], from: Option[Long], till: Option[Long], steps: Int): F[Seq[MetricsAggregation]] = Sync[F].pure(Seq.empty)
 
-  override def getMetricsRange(modelVersionId: Long, from: Long, till: Long, metrics: Seq[String], columnIndex: Option[String]): F[Seq[Metric]] = Sync[F].pure(Seq.empty)
+  override def getMetricsRange(modelVersionId: Long, from: Long, till: Long, metrics: Seq[String], columnIndex: Option[String], health: Option[Int]): F[Seq[Metric]] = Sync[F].pure(Seq.empty)
 }
 
 class MetricStorageServiceInfluxInterpreter[F[_] : Async](config: Configuration) extends MetricStorageService[F] with Logging {
@@ -166,15 +166,17 @@ class MetricStorageServiceInfluxInterpreter[F[_] : Async](config: Configuration)
 
   }
 
-  override def getMetricsRange(modelVersionId: Long, from: Long, till:Long, metrics: Seq[String], columnIndex: Option[String]):F[Seq[Metric]] = {
+  override def getMetricsRange(modelVersionId: Long, from: Long, till:Long, metrics: Seq[String], columnIndex: Option[String], health: Option[Int]):F[Seq[Metric]] = {
 
     val columnIndexClause = columnIndex.map(ci => s""" AND "columnIndex" = '$ci' """).getOrElse("")
+
+    val healthClause = health.map(healthVal => s" AND health = $healthVal ").getOrElse("")
 
     val query =
       s"""SELECT "value", "health", "modelVersionId"::tag, "columnIndex"::tag, "traces"::tag, "trace"::tag
          |FROM ${metrics.mkString(",")}
          |WHERE "modelVersionId" = '$modelVersionId'
-         |AND time >= '${toDate(from)}' AND time <= '${toDate(till)}' $columnIndexClause""".stripMargin
+         |AND time >= '${toDate(from)}' AND time <= '${toDate(till)}' $columnIndexClause $healthClause""".stripMargin
 
     database.use { db =>
       db.query(query)
