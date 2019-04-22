@@ -108,9 +108,10 @@ class HttpService[F[_] : Monad : Effect](
     :: params[String]("metrics")
     :: param[Long]("from")
     :: param[Long]("till")
-    :: paramOption[String]("columnIndex")){
-    (modelVersionId:Long, metrics:List[String], from:Long, till:Long, columnIndex: Option[String]) =>
-      metricStorageService.getMetricsRange(modelVersionId, from, till, metrics, columnIndex).map(Ok)
+    :: paramOption[String]("columnIndex")
+    :: paramOption[Int]("health")){
+    (modelVersionId:Long, metrics:List[String], from:Long, till:Long, columnIndex: Option[String], health: Option[Int]) =>
+      metricStorageService.getMetricsRange(modelVersionId, from, till, metrics, columnIndex, health).map(Ok)
   }
   
   def getMetrics = get("monitoring" :: "metrics" :: param[Long]("modelVersionId") :: param[Long]("interval") :: params[String]("metrics") :: paramOption[String]("columnIndex")) 

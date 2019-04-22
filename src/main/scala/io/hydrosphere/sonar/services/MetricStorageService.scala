@@ -27,7 +27,7 @@ trait MetricStorageService[F[_]] {
                                  till: Option[Long] = None,
                                  steps: Int = 50): F[Seq[MetricsAggregation]]
 
-  def getMetricsRange(modelVersionId: Long, from: Long, till:Long, metrics: Seq[String], columnIndex: Option[String]): F[Seq[Metric]]
+  def getMetricsRange(modelVersionId: Long, from: Long, till:Long, metrics: Seq[String], columnIndex: Option[String], health: Option[Int]): F[Seq[Metric]]
 }
 
 class MetricStorageServiceDummyInterpreter[F[_] : Sync] extends MetricStorageService[F] with Logging {
@@ -40,7 +40,7 @@ class MetricStorageServiceDummyInterpreter[F[_] : Sync] extends MetricStorageSer
 
   override def getMetricsAggregationRange(modelVersionId: Long, metrics: Seq[String], from: Option[Long], till: Option[Long], steps: Int): F[Seq[MetricsAggregation]] = Sync[F].pure(Seq.empty)
 
-  override def getMetricsRange(modelVersionId: Long, from: Long, till: Long, metrics: Seq[String], columnIndex: Option[String]): F[Seq[Metric]] = Sync[F].pure(Seq.empty)
+  override def getMetricsRange(modelVersionId: Long, from: Long, till: Long, metrics: Seq[String], columnIndex: Option[String], health: Option[Int]): F[Seq[Metric]] = Sync[F].pure(Seq.empty)
 }
 
 class MetricStorageServiceInfluxInterpreter[F[_] : Async](config: Configuration) extends MetricStorageService[F] with Logging {
@@ -123,18 +123,18 @@ class MetricStorageServiceInfluxInterpreter[F[_] : Async](config: Configuration)
     }
   }
 
-  private def recordsToReports(qr:QueryResult, modelVersionId:Long, stepInSeconds:Long) = for {
+  private def recordsToReports(qr:QueryResult, modelVersionId:Long, stepInMS:Long) = for {
     s <- qr.series
     r <- s.records
   } yield {
 
-    val fromTs = Instant.parse(r("time").toString).getEpochSecond
+    val fromTs = Instant.parse(r("time").toString).toEpochMilli
 
     MetricsAggregation(
       meanValue = Option(r("meanValue")).map(_.asInstanceOf[BigDecimal].toDouble),
       meanHealth = Option(r("meanHealth")).map(_.asInstanceOf[BigDecimal].toDouble),
       from = fromTs,
-      till = fromTs + stepInSeconds,
+      till = fromTs + stepInMS,
       modelVersionId = modelVersionId,
       minValue = Option(r("minValue")).map(_.asInstanceOf[BigDecimal].toDouble),
       maxValue = Option(r("maxValue")).map(_.asInstanceOf[BigDecimal].toDouble)
@@ -145,35 +145,38 @@ class MetricStorageServiceInfluxInterpreter[F[_] : Async](config: Configuration)
                                           metrics: Seq[String],
                                           from: Option[Long] = None,
                                           till: Option[Long] = None,
-                                          steps: Int = 50): F[Seq[MetricsAggregation]]= {
+                                          _steps: Int = 50): F[Seq[MetricsAggregation]]= {
+
+    val steps = if(_steps <= 2) 1 else  _steps - 1
 
     val fromF:F[String] = from.map(seconds => Sync[F].pure(toDate(seconds))).getOrElse(findBound(modelVersionId, metrics, Lower()))
     val tillF:F[String] = till.map(seconds => Sync[F].pure(toDate(seconds))).getOrElse(findBound(modelVersionId, metrics, Upper()))
-    def maxGroupInterval:Long = 7*24*60*60
 
     for {
       fromDT <- fromF
       tillDT <- tillF
-      step = Math.round((Instant.parse(tillDT).getEpochSecond  - Instant.parse(fromDT).getEpochSecond) / steps)
+      step = Math.ceil((Instant.parse(tillDT).toEpochMilli  - Instant.parse(fromDT).toEpochMilli) / steps).longValue()
       q = s"""SELECT mean("health") as meanHealth, mean("value") as meanValue, min("value") as minValue, max("value") as maxValue
                  |FROM ${metrics.mkString(",")}
                  |WHERE time >= '${fromDT}' AND time <= '${tillDT}' AND "modelVersionId" = '${modelVersionId}'
-                 |GROUP BY  time(${step}s)"""
+                 |GROUP BY  time(${step}ms)"""
         .stripMargin
       result <- database.use{ _.query(q).liftToAsync[F].map{ recordsToReports(_, modelVersionId, step)}}
     } yield result
 
   }
 
-  override def getMetricsRange(modelVersionId: Long, from: Long, till:Long, metrics: Seq[String], columnIndex: Option[String]):F[Seq[Metric]] = {
+  override def getMetricsRange(modelVersionId: Long, from: Long, till:Long, metrics: Seq[String], columnIndex: Option[String], health: Option[Int]):F[Seq[Metric]] = {
 
     val columnIndexClause = columnIndex.map(ci => s""" AND "columnIndex" = '$ci' """).getOrElse("")
+
+    val healthClause = health.map(healthVal => s" AND health = $healthVal ").getOrElse("")
 
     val query =
       s"""SELECT "value", "health", "modelVersionId"::tag, "columnIndex"::tag, "traces"::tag, "trace"::tag
          |FROM ${metrics.mkString(",")}
          |WHERE "modelVersionId" = '$modelVersionId'
-         |AND time >= '${toDate(from)}' AND time <= '${toDate(till)}' $columnIndexClause""".stripMargin
+         |AND time >= '${toDate(from)}' AND time <= '${toDate(till)}' $columnIndexClause $healthClause""".stripMargin
 
     database.use { db =>
       db.query(query)
