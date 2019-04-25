@@ -8,3 +8,4 @@ case class ExternalSpecConfiguration(applicationName: String, threshold: Option[
 case class ExternalMetricSpecConfiguration(input: String, applicationName: String) extends MetricSpecConfiguration
 case class HealthRateMetricSpecConfiguration(interval: Long, threshold: Option[Double]) extends MetricSpecConfiguration
 case class CounterMetricSpecConfiguration(interval: Long) extends MetricSpecConfiguration
+case class EmptyMetricSpecConfiguration() extends MetricSpecConfiguration
