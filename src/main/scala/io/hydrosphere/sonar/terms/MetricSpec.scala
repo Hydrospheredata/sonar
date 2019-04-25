@@ -18,3 +18,4 @@ case class GANMetricSpec(name: String, modelVersionId: Long, config: ExternalMet
 case class LatencyMetricSpec(name: String, modelVersionId: Long, config: HealthRateMetricSpecConfiguration, withHealth: Boolean = false, id: String = UUID.randomUUID().toString) extends MetricSpec
 case class CounterMetricSpec(name: String, modelVersionId: Long, config: CounterMetricSpecConfiguration, withHealth: Boolean = false, id: String = UUID.randomUUID().toString) extends MetricSpec
 case class ErrorRateMetricSpec(name: String, modelVersionId: Long, config: HealthRateMetricSpecConfiguration, withHealth: Boolean = false, id: String = UUID.randomUUID().toString) extends MetricSpec
+case class AccuracyMetricSpec(name: String, modelVersionId: Long, config: EmptyMetricSpecConfiguration, withHealth: Boolean = false, id: String = UUID.randomUUID().toString) extends MetricSpec

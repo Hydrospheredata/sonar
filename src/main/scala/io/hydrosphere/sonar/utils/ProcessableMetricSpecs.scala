@@ -40,4 +40,8 @@ object ProcessableMetricSpecs {
   implicit def processableErrorRate: Processable[ErrorRateMetricSpec] = (t: ErrorRateMetricSpec) => Behaviors.setup(context => {
     ErrorRateProcessor.behavior(context, t, FiniteDuration(t.config.interval, "seconds"))
   })
+
+  implicit def processableAccuracy: Processable[AccuracyMetricSpec] = (t: AccuracyMetricSpec) => Behaviors.setup(context => {
+    new AccuracyProcessor(context, t)
+  })
 }

@@ -92,6 +92,13 @@ POST /monitoring/metricspec
 }
 ```
 
+- `AccuracyMetricSpec` – Prediction Accuracy
+```
+{
+
+}
+```
+
 ### Get Metric Specification
 
 #### By ID
@@ -186,6 +193,8 @@ GET /monitoring/metrics?modelVersionId=<long>&interval=<long>&metrics=<string, r
     - `counter`
 - Error Rate
     - `error_rate`
+- Prediction Accuracy
+    - `accuracy`
 
 ### Get Profiles
 
