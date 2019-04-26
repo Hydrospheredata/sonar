@@ -20,14 +20,16 @@ class AEProcessor(context: ActorContext[Processor.MetricMessage], metricSpec: AE
   override def onMessage(msg: MetricMessage): Behavior[MetricMessage] = msg match {
     case MetricRequest(payload, saveTo) =>
       context.log.debug(s"Computing AE: $payload")
+      val input = payload.getDoubleInput(metricSpec.config.input)
       predictionService.callApplication(metricSpec.config.applicationName,
         inputs = Map(
-          "X" -> DoubleTensor(TensorShape.mat(-1, 112), payload.getDoubleInput(metricSpec.config.input)).toProto
+          "X" -> DoubleTensor(TensorShape.mat(-1, 112), input).toProto
         )
       ).unsafeRunAsync {
-        case Right(value) => 
+        case Right(value) =>
           context.log.info(s"${value.outputs.get("reconstructed")}")
-          val reconstructed = value.outputs.get("reconstructed").flatMap(x => Try(x.floatVal.head.toDouble).toOption).getOrElse(0d)
+          val result = value.outputs.get("reconstructed").map(_.floatVal.map(_.toDouble)).getOrElse(Array.fill(112)(0D).toSeq)
+          val reconstructed = AEProcessor.vectorDistance(input, result)
           val health = if (metricSpec.withHealth) {
             Some(reconstructed <= metricSpec.config.threshold.getOrElse(Double.MaxValue))
           } else None
@@ -41,5 +43,14 @@ class AEProcessor(context: ActorContext[Processor.MetricMessage], metricSpec: AE
         case Left(exc) => context.log.error(exc, s"Error while requesting AE (${metricSpec.config.applicationName}) prediction for modelVersion ${metricSpec.modelVersionId}")
       }
       this
+  }
+}
+
+object AEProcessor {
+  def vectorDistance(a: Seq[Double], b: Seq[Double]): Double = {
+    val squaredDistance = a.zip(b)
+      .map { case (x, y) => Math.pow(x - y, 2) }
+      .sum
+    Math.sqrt(squaredDistance)
   }
 }
