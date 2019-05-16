@@ -4,7 +4,7 @@ import akka.actor.typed.{ActorRef, Behavior}
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import cats.data.NonEmptyList
 import eu.timepit.refined.auto._
-import io.hydrosphere.serving.monitoring.monitoring.ExecutionInformation
+import io.hydrosphere.serving.monitoring.api.ExecutionInformation
 import io.hydrosphere.serving.tensorflow.api.predict.PredictRequest
 import io.hydrosphere.sonar.actors.Processor
 import io.hydrosphere.sonar.actors.writers.MetricWriter

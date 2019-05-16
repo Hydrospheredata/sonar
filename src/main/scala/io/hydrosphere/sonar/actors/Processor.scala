@@ -1,7 +1,7 @@
 package io.hydrosphere.sonar.actors
 
 import akka.actor.typed.ActorRef
-import io.hydrosphere.serving.monitoring.monitoring.ExecutionInformation
+import io.hydrosphere.serving.monitoring.api.ExecutionInformation
 import io.hydrosphere.sonar.actors.writers.MetricWriter
 
 object Processor {

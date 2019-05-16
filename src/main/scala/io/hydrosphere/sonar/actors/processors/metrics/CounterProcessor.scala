@@ -2,7 +2,7 @@ package io.hydrosphere.sonar.actors.processors.metrics
 
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import akka.actor.typed.{ActorRef, Behavior}
-import io.hydrosphere.serving.monitoring.monitoring.ExecutionInformation
+import io.hydrosphere.serving.monitoring.api.ExecutionInformation
 import io.hydrosphere.sonar.actors.Processor
 import io.hydrosphere.sonar.actors.writers.MetricWriter
 import io.hydrosphere.sonar.terms.{CounterMetricSpec, Metric}

@@ -12,8 +12,8 @@ import io.grpc.Server
 import io.grpc.netty.NettyServerBuilder
 import io.hydrosphere.serving.grpc.BuilderWrapper
 import io.hydrosphere.serving.manager.grpc.entities.ModelVersion
-import io.hydrosphere.serving.monitoring.monitoring.MonitoringServiceGrpc
-import io.hydrosphere.serving.monitoring.monitoring.MonitoringServiceGrpc.MonitoringService
+import io.hydrosphere.serving.monitoring.api.MonitoringServiceGrpc
+import io.hydrosphere.serving.monitoring.api.MonitoringServiceGrpc.MonitoringService
 import io.hydrosphere.sonar.actors.SonarSupervisor
 import io.hydrosphere.sonar.config.{Configuration, H2, Postgres}
 import io.hydrosphere.sonar.endpoints.{HttpService, MonitoringServiceGrpcApi}
