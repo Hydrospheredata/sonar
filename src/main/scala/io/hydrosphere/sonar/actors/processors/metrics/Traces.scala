@@ -1,6 +1,7 @@
 package io.hydrosphere.sonar.actors.processors.metrics
 
-import io.hydrosphere.serving.monitoring.monitoring.{ExecutionInformation, TraceData}
+import io.hydrosphere.serving.monitoring.api.ExecutionInformation
+
 
 object Traces {
 

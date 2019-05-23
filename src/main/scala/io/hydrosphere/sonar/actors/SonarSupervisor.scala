@@ -4,7 +4,7 @@ import akka.actor.typed.scaladsl.{AbstractBehavior, ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior, PostStop, Signal, SupervisorStrategy}
 import cats.effect.IO
 import io.hydrosphere.serving.manager.data_profile_types.DataProfileType
-import io.hydrosphere.serving.monitoring.monitoring.ExecutionInformation
+import io.hydrosphere.serving.monitoring.api.ExecutionInformation
 import io.hydrosphere.sonar.actors.processors.profiles.NumericalProfileProcessor
 import io.hydrosphere.sonar.actors.processors.subsampling.ReservoirProcessor
 import io.hydrosphere.sonar.actors.writers.{MetricWriter, ProfileWriter}

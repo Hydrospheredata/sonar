@@ -1,6 +1,6 @@
 package io.hydrosphere.sonar.utils
 
-import io.hydrosphere.serving.monitoring.monitoring.ExecutionInformation
+import io.hydrosphere.serving.monitoring.api.ExecutionInformation
 import io.hydrosphere.sonar.Logging
 import io.hydrosphere.sonar.utils.TensorProtoOps._
 

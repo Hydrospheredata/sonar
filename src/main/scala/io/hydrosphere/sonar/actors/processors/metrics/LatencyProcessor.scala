@@ -2,8 +2,8 @@ package io.hydrosphere.sonar.actors.processors.metrics
 
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import akka.actor.typed.{ActorRef, Behavior}
-import io.hydrosphere.serving.monitoring.monitoring.ExecutionInformation
-import io.hydrosphere.serving.monitoring.monitoring.ExecutionInformation.ResponseOrError
+import io.hydrosphere.serving.monitoring.api.ExecutionInformation
+import io.hydrosphere.serving.monitoring.api.ExecutionInformation.ResponseOrError
 import io.hydrosphere.sonar.actors.Processor
 import io.hydrosphere.sonar.actors.writers.MetricWriter
 import io.hydrosphere.sonar.terms.{LatencyMetricSpec, Metric}
@@ -37,24 +37,7 @@ object LatencyProcessor {
     
     Behaviors.receiveMessage {
       case m: Processor.MetricRequest =>
-        val (sumDelta, countDelta) = m.payload.responseOrError match {
-          case ResponseOrError.Response(value) =>
-            val latency = for {
-              tensor <- value.internalInfo.get("system.latency")
-              l <- Try(tensor.int64Val).toOption
-              head <- l.headOption
-            } yield head.toDouble
-            latency match {
-              case Some(l) => (l, 1)
-              case None =>
-                context.log.debug("Empty system.latency")
-                context.log.debug(s"${value.internalInfo}")
-                (0.0, 0)
-            }
-          case x =>
-            context.log.debug("Response: {}", x.getClass)
-            (0.0, 0)
-        }
+        val (sumDelta, countDelta) = m.payload.metadata.map(_.latency -> 1).getOrElse(0D -> 0)
         active(sum + sumDelta, count + countDelta, saveToActors + m.saveTo, m.payload :: payloads, metricSpec, timers, context, duration)
         
       case Timeout =>
