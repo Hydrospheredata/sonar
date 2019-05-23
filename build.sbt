@@ -1,4 +1,5 @@
 import sbt._
+import sbtbuildinfo.{BuildInfoRenderer, ScalaCaseClassRenderer, ScalaCaseObjectRenderer}
 
 name := "sonar"
 
@@ -69,4 +70,5 @@ imageNames in docker := Seq(
 buildInfoKeys := Seq[BuildInfoKey](name, version, scalaVersion, sbtVersion, git.gitCurrentBranch, git.gitCurrentTags, git.gitHeadCommit)
 buildInfoPackage := "io.hydrosphere.sonar"
 buildInfoOptions += BuildInfoOption.ToJson
+buildInfoRenderFactory := ScalaCaseClassRenderer.apply
 unmanagedSourceDirectories in Compile += sourceManaged.value

@@ -165,7 +165,7 @@ class HttpService[F[_] : Monad : Effect](
   }
 
   def getBuildInfo = get("monitoring" :: "buildinfo") {
-    Ok(BuildInfo.toJson).pure[F]
+    Ok(BuildInfo.value).pure[F]
   }
   
   def endpoints = (getBuildInfo :+: healthCheck :+: createMetricSpec :+: getMetricSpecById :+: getAllMetricSpecs :+: getMetricSpecsByModelVersion :+: getMetricsAggregation :+: getMetricsRange :+: getMetrics :+: getProfiles :+: getProfileNames :+: batchProfile :+: getBatchStatus :+: deleteMetricSpec :+: s3BatchProfile) handle {
