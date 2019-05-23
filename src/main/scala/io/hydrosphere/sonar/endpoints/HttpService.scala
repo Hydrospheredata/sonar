@@ -20,6 +20,7 @@ import io.circe.generic.extras.auto._
 import io.finch._
 import io.finch.fs2._
 import io.finch.circe._
+import io.hydrosphere.sonar.BuildInfo
 import io.hydrosphere.sonar.services._
 import io.hydrosphere.sonar.utils.{CsvRowSizeMismatch, MetricSpecNotFound}
 import io.hydrosphere.sonar.Logging
@@ -162,8 +163,12 @@ class HttpService[F[_] : Monad : Effect](
   def getBatchStatus = get("monitoring" :: "profiles" :: "batch" :: path[Long] :: "status") { modelVersionId: Long =>
     batchProfileService.getProcessingStatus(modelVersionId).map(Ok)
   }
+
+  def getBuildInfo = get("monitoring" :: "buildinfo") {
+    Ok(BuildInfo.toJson).pure[F]
+  }
   
-  def endpoints = (healthCheck :+: createMetricSpec :+: getMetricSpecById :+: getAllMetricSpecs :+: getMetricSpecsByModelVersion :+: getMetricsAggregation :+: getMetricsRange :+: getMetrics :+: getProfiles :+: getProfileNames :+: batchProfile :+: getBatchStatus :+: deleteMetricSpec :+: s3BatchProfile) handle {
+  def endpoints = (getBuildInfo :+: healthCheck :+: createMetricSpec :+: getMetricSpecById :+: getAllMetricSpecs :+: getMetricSpecsByModelVersion :+: getMetricsAggregation :+: getMetricsRange :+: getMetrics :+: getProfiles :+: getProfileNames :+: batchProfile :+: getBatchStatus :+: deleteMetricSpec :+: s3BatchProfile) handle {
     case e: io.finch.Error.NotParsed =>
       logger.warn(s"Can't parse json with message: ${e.getMessage()}")
       BadRequest(new RuntimeException(e))
