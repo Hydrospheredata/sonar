@@ -32,7 +32,7 @@ class TextProfileProcessor(config: Configuration) extends ProfileProcessor {
   case object TimeKey
   case object Timeout extends Processor.ProfileMessage
 
-  private val pipeline = {
+  private lazy val pipeline = {
     val pros = new Properties()
     pros.setProperty("annotators", "tokenize, ssplit, pos, lemma, parse, sentiment") // TokenRegexNER not found to make "ner"
     pros.setProperty("tokenize.model", config.profile.text.taggerPath)
@@ -44,11 +44,11 @@ class TextProfileProcessor(config: Configuration) extends ProfileProcessor {
     new StanfordCoreNLP(pros)
   }
 
-  private val tokenizerFactory: TokenizerFactory[CoreLabel] = PTBTokenizer.factory(new CoreLabelTokenFactory(), "")
+  private lazy val tokenizerFactory: TokenizerFactory[CoreLabel] = PTBTokenizer.factory(new CoreLabelTokenFactory(), "")
 
-  val tagger: MaxentTagger = new MaxentTagger(config.profile.text.taggerPath)
+  lazy val tagger: MaxentTagger = new MaxentTagger(config.profile.text.taggerPath)
 
-  val parser: ShiftReduceParser = ShiftReduceParser.loadModel(config.profile.text.shiftReduceParserPath)
+  lazy val parser: ShiftReduceParser = ShiftReduceParser.loadModel(config.profile.text.shiftReduceParserPath)
 
   def behavior(context: ActorContext[Processor.ProfileMessage], modelVersion: ModelVersion, saveTo: ActorRef[ProfileWriter.Message], duration: FiniteDuration, maxSize: Int): Behavior[Processor.ProfileMessage] = {
     Behaviors.withTimers { timers =>
@@ -94,8 +94,8 @@ class TextProfileProcessor(config: Configuration) extends ProfileProcessor {
           tokenCount += tokens.size()
           
           val tagged = tagger.tagSentence(tokens)
-          val sentenceTreeDepth = parser.apply(tagged).depth()
-          sentenceTreeDepthSum += sentenceTreeDepth
+//          val sentenceTreeDepth = parser.apply(tagged).depth()
+//          sentenceTreeDepthSum += sentenceTreeDepth
           
           val lemmas = sentenceAnnotation.asScala.toList.flatMap{ sentence => 
             sentence
@@ -122,7 +122,7 @@ class TextProfileProcessor(config: Configuration) extends ProfileProcessor {
             sentimentSum,
             lengthSum,
             tokenCount,
-            sentenceTreeDepthSum,
+            0L,
             uniqueLemmaRatioSum,
             // TODO: implement language detection
             Map.empty,

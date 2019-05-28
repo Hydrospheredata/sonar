@@ -4,6 +4,8 @@ JAVA=$(which java)
 
 APP_OPTS=""
 
+[ -z "$JAVA_XMX" ] && JAVA_XMX="1024M"
+
 [[ -z "$DB_TYPE" ]] && DB_TYPE="h2"
 [[ -z "$DB_JDBC_URL" ]] && DB_JDBC_URL="jdbc:h2:file:./target/db.h2;DB_CLOSE_DELAY=-1;INIT=create domain if not exists json as other;"
 [[ -z "$DB_USER" ]] && DB_USER="sa"
@@ -33,7 +35,9 @@ APP_OPTS=""
 [[ -z "$PROFILE_TEXT_TAGGER_PATH" ]] && PROFILE_TEXT_TAGGER_PATH="/data/models/english-left3words-distsim.tagger"
 [[ -z "$PROFILE_TEXT_SHIFT_REDUCE_PARSER_PATH" ]] && PROFILE_TEXT_SHIFT_REDUCE_PARSER_PATH="/data/srparser/englishSR.beam.ser.gz"
 [[ -z "$PROFILE_TEXT_LEXPARSER_PATH" ]] && PROFILE_TEXT_LEXPARSER_PATH="/data/lexparser/englishPCFG.ser.gz"
-[[ -z "$PROFILE_TEXT_SENTIMENT_PATH" ]] && PROFILE_TEXT_SENTIMENT_PATH="/data/sentiment/sentiment.ser.gz" 
+[[ -z "$PROFILE_TEXT_SENTIMENT_PATH" ]] && PROFILE_TEXT_SENTIMENT_PATH="/data/sentiment/sentiment.ser.gz"
+
+JAVA_OPTS="-Xmx$JAVA_XMX -Xms$JAVA_XMX" 
 
 if [[ "$CUSTOM_CONFIG" = "" ]]
 then
@@ -57,4 +61,5 @@ else
    cat $CUSTOM_CONFIG
 fi
 
-${JAVA} -cp "/app/app.jar:/app/lib/*" ${APP_OPTS} io.hydrosphere.sonar.Main
+echo ${JAVA} ${JAVA_OPTS} -cp "/app/app.jar:/app/lib/*" ${APP_OPTS} io.hydrosphere.sonar.Main
+${JAVA} ${JAVA_OPTS} -cp "/app/app.jar:/app/lib/*" ${APP_OPTS} io.hydrosphere.sonar.Main

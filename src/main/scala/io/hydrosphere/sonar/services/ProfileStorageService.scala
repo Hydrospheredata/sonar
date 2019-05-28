@@ -231,13 +231,13 @@ class ProfileStorageServiceMongoInterpreter[F[_]: Async](config: Configuration, 
               tokenLengthSum  <- doc.get("tokenLengthSum").map(_.asInt64().longValue())
               treeDepthSum    <- doc.get("treeDepthSum").map(_.asInt64().longValue())
               uniqueLemmaSum  <- doc.get("uniqueLemmasSum").map(_.asDouble().doubleValue())
-              languagesSum    <- doc.get("languagesSum").map(d => d.asDocument().entrySet().asScala.map(e => e.getKey -> e.getValue.asInt64().longValue()).toMap)
+//              languagesSum    <- doc.get("languagesSum").map(d => d.asDocument().entrySet().asScala.map(e => e.getKey -> e.getValue.asInt64().longValue()).toMap)
               posTagSum       <- doc.get("posTagSum").map(d => d.asDocument().entrySet().asScala.map(e => e.getKey -> e.getValue.asInt64().longValue()).toMap)
               hyperLogLog     <- doc.get("tokenHyperLogLog").map(d => Document(d.asDocument().toJson)).flatMap(hll => for {
                 size <- hll.get("size").map(_.asInt32().intValue())
                 buckets <- hll.get("buckets").map(_.asDocument().entrySet().asScala.map(e => e.getKey.toInt -> e.getValue.asInt32().intValue()).toMap)
               } yield HyperLogLog(size, buckets))
-            } yield TextProfile(TextPreprocessedProfile(modelVersionId, name, size, missing, sentimentSum, lengthSum, tokenLengthSum, treeDepthSum, uniqueLemmaSum, languagesSum, posTagSum, hyperLogLog))
+            } yield TextProfile(TextPreprocessedProfile(modelVersionId, name, size, missing, sentimentSum, lengthSum, tokenLengthSum, treeDepthSum, uniqueLemmaSum, Map.empty[String, Long], posTagSum, hyperLogLog))
           }}
         }
       })

@@ -7,12 +7,11 @@ import io.hydrosphere.serving.manager.grpc.entities.ModelVersion
 import io.hydrosphere.serving.monitoring.api.ExecutionInformation
 import io.hydrosphere.serving.tensorflow.api.predict.PredictRequest
 import io.hydrosphere.sonar.actors.Processor
+import io.hydrosphere.sonar.actors.Processor.ProfileRequest
 import io.hydrosphere.sonar.actors.writers.ProfileWriter
-import io.hydrosphere.sonar.terms.NumericalPreprocessedProfile
 import io.hydrosphere.sonar.utils.CollectionOps
 import io.hydrosphere.sonar.utils.ExecutionInformationOps._
 import io.hydrosphere.sonar.utils.profiles.NumericalProfileUtils
-import io.hydrosphere.sonar.utils.math.{MutableCountMinSketch, MutableHyperLogLog}
 
 import scala.concurrent.duration.FiniteDuration
 
