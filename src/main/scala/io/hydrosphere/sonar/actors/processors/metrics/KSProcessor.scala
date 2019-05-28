@@ -4,7 +4,7 @@ import akka.actor.typed.{ActorRef, Behavior}
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import cats.data.NonEmptyList
 import eu.timepit.refined.auto._
-import io.hydrosphere.serving.monitoring.monitoring.ExecutionInformation
+import io.hydrosphere.serving.monitoring.api.ExecutionInformation
 import io.hydrosphere.serving.tensorflow.api.predict.PredictRequest
 import io.hydrosphere.sonar.actors.Processor
 import io.hydrosphere.sonar.actors.writers.MetricWriter
@@ -42,7 +42,13 @@ object KSProcessor {
     val ksFn = (sample: NonEmptyList[Double]) => KolmogorovSmirnovTest.test(sample, Statistics.generateDistribution(Statistics.Distribution.Normal, 100))
     val transposed = CollectionOps.safeTranspose(flatRequests)
     transposed.filter(_.nonEmpty).map(l => NonEmptyList(l.head, l.toList.tail)).map(ksFn).zipWithIndex.flatMap { case (ksResult, idx) =>
-      val labels = Map("modelVersionId" -> metricSpec.modelVersionId.toString, "columnIndex" -> idx.toString)
+      
+      val labels = Map(
+        "modelVersionId" -> metricSpec.modelVersionId.toString,
+        "columnIndex" -> idx.toString,
+        "traces" -> Traces.many(requests.map(_.payload))
+      )
+      
       val health = if (metricSpec.withHealth) {
         Some(ksResult.value <= ksResult.rejectionLevel)
       } else None
@@ -72,14 +78,14 @@ object KSProcessor {
       case m: Processor.MetricRequest => 
         val newBuffer = buffer :+ filterRequest(m, metricSpec.config.input)
         if (newBuffer.size == maxSize) {
-          context.log.debug(s"Processing KS for ${newBuffer.size} elements (max)")
+          context.log.info(s"Processing KS for ${newBuffer.size} elements (max)")
           process(newBuffer, metricSpec)
           active(Vector.empty[Processor.MetricRequest], timers, context, metricSpec, duration, maxSize)
         } else {
           active(newBuffer, timers, context, metricSpec, duration, maxSize)
         }
       case Timeout =>
-        context.log.debug(s"Processing KS for ${buffer.size} elements (timeout)")
+        context.log.info(s"Processing KS for ${buffer.size} elements (timeout)")
         process(buffer, metricSpec)
         active(Vector.empty[Processor.MetricRequest], timers, context, metricSpec, duration, maxSize)
     }

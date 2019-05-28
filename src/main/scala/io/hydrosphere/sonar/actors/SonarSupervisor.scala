@@ -4,7 +4,7 @@ import akka.actor.typed.scaladsl.{AbstractBehavior, ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior, PostStop, Signal, SupervisorStrategy}
 import cats.effect.IO
 import io.hydrosphere.serving.manager.data_profile_types.DataProfileType
-import io.hydrosphere.serving.monitoring.monitoring.ExecutionInformation
+import io.hydrosphere.serving.monitoring.api.ExecutionInformation
 import io.hydrosphere.sonar.actors.processors.profiles.{NumericalProfileProcessor, TextProfileProcessor}
 import io.hydrosphere.sonar.actors.processors.subsampling.ReservoirProcessor
 import io.hydrosphere.sonar.actors.writers.{MetricWriter, ProfileWriter}
@@ -84,6 +84,7 @@ class SonarSupervisor(context: ActorContext[SonarSupervisor.Message])(implicit c
       context.log.debug(s"Got Request: $payload".slice(0, 1024))
       payload.metadata match {
         case Some(metadata) =>
+          context.log.info(s"$metadata")
           val modelVersionId = metadata.modelVersionId
           // Concept drift metrics
           // Each MetricSpec *must* have an appropriate processor
@@ -99,15 +100,20 @@ class SonarSupervisor(context: ActorContext[SonarSupervisor.Message])(implicit c
           // Each DataProfileType *can* have a processor, otherwise it will be ignored
           modelDataService.getModelVersion(modelVersionId).unsafeRunAsync {
             case Right(modelVersion) =>
-              val modelDataTypes = modelVersion.dataTypes.values.toList 
-              context.log.debug(s"ModelVersion #${modelVersion.id} contains ${modelDataTypes.mkString(", ")} types")
-              if (modelDataTypes.contains(DataProfileType.NUMERICAL)) {
-                val actor = getOrCreateProfileActor(Behaviors.setup(ctx => NumericalProfileProcessor.behavior(ctx, modelVersion, profileWriter, 1 minute, 10)), modelVersionId, DataProfileType.NUMERICAL)
-                actor ! Processor.ProfileRequest(payload)
-              }
-              if (modelDataTypes.contains(DataProfileType.TEXT)) {
-                val actor = getOrCreateProfileActor(Behaviors.setup(ctx => textProfileProcessor.behavior(ctx, modelVersion, profileWriter, 1 minute, 10)), modelVersionId, DataProfileType.TEXT)
-                actor ! Processor.ProfileRequest(payload)
+              modelVersion.contract.flatMap(_.predict) match {
+                case Some(signature) =>
+                  val inputs = signature.inputs.map(_.profile)
+                  val modelDataTypes = inputs
+                  if (modelDataTypes.contains(DataProfileType.NUMERICAL)) {
+                    val actor = getOrCreateProfileActor(Behaviors.setup(ctx => NumericalProfileProcessor.behavior(ctx, modelVersion, profileWriter, 1 minute, 10)), modelVersionId, DataProfileType.NUMERICAL)
+                    actor ! Processor.ProfileRequest(payload)
+                  }
+                  if (modelDataTypes.contains(DataProfileType.TEXT)) {
+                    val actor = getOrCreateProfileActor(Behaviors.setup(ctx => textProfileProcessor.behavior(ctx, modelVersion, profileWriter, 1 minute, 10)), modelVersionId, DataProfileType.TEXT)
+                    actor ! Processor.ProfileRequest(payload)
+                  }
+                case None =>
+                  context.log.error(s"Tried to access ModelVersion without predict signature")
               }
             case Left(exc) => context.log.error(exc, s"Error while getting ModelVersion")
           }

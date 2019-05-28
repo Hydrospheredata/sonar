@@ -2,8 +2,8 @@ package io.hydrosphere.sonar.endpoints
 
 import akka.actor.typed.ActorRef
 import com.google.protobuf.empty.Empty
-import io.hydrosphere.serving.monitoring.monitoring.ExecutionInformation
-import io.hydrosphere.serving.monitoring.monitoring.MonitoringServiceGrpc.MonitoringService
+import io.hydrosphere.serving.monitoring.api.ExecutionInformation
+import io.hydrosphere.serving.monitoring.api.MonitoringServiceGrpc.MonitoringService
 import io.hydrosphere.sonar.Logging
 import io.hydrosphere.sonar.actors.SonarSupervisor
 

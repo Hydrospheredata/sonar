@@ -14,7 +14,7 @@ import scala.concurrent.duration._
 
 trait PredictionService[F[_]] {
   def callApplication(request: PredictRequest): F[PredictResponse]
-  def callApplication(applicationName: String, signatureName: String, inputs: Map[String, TensorProto]): F[PredictResponse]
+  def callApplication(applicationName: String, inputs: Map[String, TensorProto]): F[PredictResponse]
 }
 
 class PredictionServiceGrpcInterpreter[F[_] : Async](config: Configuration) extends PredictionService[F] {
@@ -40,9 +40,9 @@ class PredictionServiceGrpcInterpreter[F[_] : Async](config: Configuration) exte
     .predict(request)
     .liftToAsync[F]
 
-  override def callApplication(applicationName: String, signatureName: String, inputs: Map[String, TensorProto]): F[PredictResponse] = {
+  override def callApplication(applicationName: String, inputs: Map[String, TensorProto]): F[PredictResponse] = {
     callApplication(PredictRequest(
-      modelSpec = Some(ModelSpec(applicationName, None, signatureName)),
+      modelSpec = Some(ModelSpec(applicationName, None, "")),
       inputs
     ))
   }

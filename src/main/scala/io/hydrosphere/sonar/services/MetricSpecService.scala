@@ -19,6 +19,7 @@ trait MetricSpecService[F[_]] {
   def getMetricSpecById(id: String): F[MetricSpec]
   def getMetricSpecsByModelVersion(modelVersionId: Long): F[List[MetricSpec]]
   def getAllMetricSpecs: F[List[MetricSpec]]
+  def remove(id: String): F[Unit]
 }
 
 class MetricSpecServiceInterpreter[F[_] : Sync](transactor: Transactor[F]) extends MetricSpecService[F] {
@@ -87,5 +88,13 @@ class MetricSpecServiceInterpreter[F[_] : Sync](transactor: Transactor[F]) exten
            WHERE modelVersionId = $modelVersionId
          """
     sql.query[MetricSpecFields].stream.map(toMetricSpec).compile.toList.transact(transactor)
+  }
+
+  override def remove(id: String): F[Unit] = {
+    val sql =
+      sql"""
+           DELETE FROM metric_specs WHERE id = $id
+         """
+    sql.update.run.map(_ => ()).transact(transactor)
   }
 }

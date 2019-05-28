@@ -23,7 +23,7 @@ trait ModelDataService[F[_]] {
 
 class ModelDataServiceIdInterpreter[F[_] : Monad] extends ModelDataService[F] {
   override def getModelVersion(modelVersionId: Long): F[ModelVersion] = {
-    val mv = ModelVersion(1, 1, "ModelType", "Status", None, None, Some(ModelContract("ModelName", Seq(ModelSignature("infer", Seq(ModelField("blah")), Seq.empty[ModelField])))), Map("blah" -> DataProfileType.NUMERICAL), None, "", None)
+    val mv = ModelVersion(1, 1, "ModelType", "Status", None, None, Some(ModelContract("ModelName", Some(ModelSignature("infer", Seq(ModelField(name="blah", profile=DataProfileType.NUMERICAL)), Seq.empty[ModelField])))), None, "", None)
     Monad[F].pure(mv)
   }
 }

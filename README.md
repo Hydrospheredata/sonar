@@ -39,7 +39,6 @@ POST /monitoring/metricspec
 {
     "input": string,
     "applicationName": string,
-    "applicationSignature": string, 
     "threshold": double (optional, only for health)
 }
 ```
@@ -49,7 +48,14 @@ POST /monitoring/metricspec
 {
     "input": string,
     "applicationName": string,
-    "applicationSignature": string,
+    "threshold": double (optional, only for health)
+}
+```
+
+- `imageAEMetricSpec` – Image Autoencoder
+```
+{
+    "applicationName": string,
     "threshold": double (optional, only for health)
 }
 ```
@@ -83,6 +89,13 @@ POST /monitoring/metricspec
 {
     "interval": long (in seconds),
     "threshold": double (optional, only for health) 
+}
+```
+
+- `AccuracyMetricSpec` – Prediction Accuracy
+```
+{
+
 }
 ```
 
@@ -180,6 +193,8 @@ GET /monitoring/metrics?modelVersionId=<long>&interval=<long>&metrics=<string, r
     - `counter`
 - Error Rate
     - `error_rate`
+- Prediction Accuracy
+    - `accuracy`
 
 ### Get Profiles
 
@@ -254,3 +269,34 @@ GET /monitoring/fields/{model-version-id}
     ...
 ]
 ```
+
+### Training data upload
+
+#### Start processing
+
+```
+POST /monitoring/profiles/batch/{model-version-id}
+Transfer-Encoding: chunked
+<chunked csv-body>
+
+200 OK
+"ok"
+```
+
+#### Get processing status
+
+```
+GET /monitoring/profiles/batch/{model-version-id}/status
+
+200 OK
+{
+    "kind": string
+}
+```
+
+##### Statuses:
+- Success
+- Failure
+- Processing
+- NotRegistered
+

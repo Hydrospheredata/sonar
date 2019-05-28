@@ -4,7 +4,7 @@ object Dependencies {
 
   val LogbackV = "1.2.3"
   val CirceV = "0.11.0"
-  val FinchV = "0.26.1"
+  val FinchV = "0.27.0"
   val DoobieV = "0.6.0"
   val PureConfigV = "0.10.1"
   val AkkaV = "2.5.19"
@@ -23,7 +23,9 @@ object Dependencies {
 
   val finch: Seq[ModuleID] = Seq(
     "com.github.finagle" %% "finchx-core" % FinchV,
-    "com.github.finagle" %% "finchx-circe" % FinchV
+    "com.github.finagle" %% "finchx-circe" % FinchV,
+    "com.github.finagle" %% "finchx-fs2" % FinchV,
+    "com.github.finagle" %% "finchx-iteratee" % FinchV
   )
 
   val doobie: Seq[ModuleID] = Seq(
@@ -35,7 +37,7 @@ object Dependencies {
 
   val grpc: Seq[ModuleID] = Seq(
     "io.grpc" % "grpc-netty" % "1.18.0",
-    "io.hydrosphere" %% "serving-grpc-scala" % "0.2.2"
+    "io.hydrosphere" %% "serving-grpc-scala" % "2.0.4-preview"
   )
 
   val pureconfig: Seq[ModuleID] = Seq(
@@ -50,6 +52,12 @@ object Dependencies {
   val cats: Seq[ModuleID] = Seq(
     "org.typelevel" %% "cats-core" % "1.5.0",
     "org.typelevel" %% "cats-effect" % "1.1.0"
+  )
+  
+  val fs2: Seq[ModuleID] = Seq(
+    "co.fs2" %% "fs2-core" % "1.0.3",
+    "co.fs2" %% "fs2-io" % "1.0.3",
+    "io.github.dmateusp" %% "fs2-aws" % "0.27.3"
   )
   
   val math: Seq[ModuleID] = Seq(
@@ -73,5 +81,5 @@ object Dependencies {
   val nlp: ModuleID = "edu.stanford.nlp" % "stanford-corenlp" % "3.9.2"
   
   val projectDeps: Seq[ModuleID] = 
-    logback ++ circe ++ finch ++ doobie ++ grpc ++ pureconfig ++ akka ++ cats ++ math ++ refined :+ flyway :+ hashing :+ enumeratum :+ influx :+ mongo :+ nlp
+    logback ++ circe ++ finch ++ doobie ++ grpc ++ pureconfig ++ akka ++ cats ++ fs2 ++ math ++ refined :+ flyway :+ hashing :+ enumeratum :+ influx :+ mongo :+ nlp
 }

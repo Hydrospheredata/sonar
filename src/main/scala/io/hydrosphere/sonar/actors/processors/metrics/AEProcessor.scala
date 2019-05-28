@@ -11,6 +11,8 @@ import io.hydrosphere.sonar.services.PredictionService
 import io.hydrosphere.sonar.terms.{AEMetricSpec, Metric}
 import io.hydrosphere.sonar.utils.ExecutionInformationOps._
 
+import scala.util.Try
+
 class AEProcessor(context: ActorContext[Processor.MetricMessage], metricSpec: AEMetricSpec)(implicit predictionService: PredictionService[IO]) extends AbstractBehavior[Processor.MetricMessage] {
 
   import Processor._
@@ -18,20 +20,37 @@ class AEProcessor(context: ActorContext[Processor.MetricMessage], metricSpec: AE
   override def onMessage(msg: MetricMessage): Behavior[MetricMessage] = msg match {
     case MetricRequest(payload, saveTo) =>
       context.log.debug(s"Computing AE: $payload")
-      predictionService.callApplication(metricSpec.config.applicationName, metricSpec.config.applicationSignature,
+      val input = payload.getDoubleInput(metricSpec.config.input)
+      predictionService.callApplication(metricSpec.config.applicationName,
         inputs = Map(
-          "X" -> DoubleTensor(TensorShape.vector(-1), payload.getDoubleInput(metricSpec.config.input)).toProto
+          "X" -> DoubleTensor(TensorShape.mat(-1, 112), input).toProto
         )
       ).unsafeRunAsync {
-        case Right(value) => 
-          val reconstructed = value.outputs.get("reconstructed").flatMap(_.doubleVal.headOption).getOrElse(0d)
+        case Right(value) =>
+          context.log.info(s"${value.outputs.get("reconstructed")}")
+          val result = value.outputs.get("reconstructed").map(_.floatVal.map(_.toDouble)).getOrElse(Array.fill(112)(0D).toSeq)
+          val reconstructed = AEProcessor.vectorDistance(input, result)
           val health = if (metricSpec.withHealth) {
             Some(reconstructed <= metricSpec.config.threshold.getOrElse(Double.MaxValue))
           } else None
-          val metric = Metric("autoencoder_reconstructed", reconstructed, Map("modelVersionId" -> metricSpec.modelVersionId.toString), health)
+          val metric = Metric(
+            "autoencoder_reconstructed", reconstructed,
+            Map(
+              "modelVersionId" -> metricSpec.modelVersionId.toString,
+              "trace" -> Traces.single(payload)),
+            health)
           saveTo ! MetricWriter.ProcessedMetric(Seq(metric))
-        case Left(exc) => context.log.error(exc, s"Error while requesting AE (${metricSpec.config.applicationName} -> ${metricSpec.config.applicationSignature}) prediction for modelVersion ${metricSpec.modelVersionId}")
+        case Left(exc) => context.log.error(exc, s"Error while requesting AE (${metricSpec.config.applicationName}) prediction for modelVersion ${metricSpec.modelVersionId}")
       }
       this
+  }
+}
+
+object AEProcessor {
+  def vectorDistance(a: Seq[Double], b: Seq[Double]): Double = {
+    val squaredDistance = a.zip(b)
+      .map { case (x, y) => Math.pow(x - y, 2) }
+      .sum
+    Math.sqrt(squaredDistance)
   }
 }

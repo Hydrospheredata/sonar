@@ -1,8 +1,11 @@
 import sbt._
+import sbtbuildinfo.{BuildInfoRenderer, ScalaCaseClassRenderer, ScalaCaseObjectRenderer}
 
 name := "sonar"
 
 scalaVersion := "2.12.7"
+
+version := sys.props.getOrElse("appVersion", "latest")
 
 scalacOptions ++= Seq(
   "-unchecked",
@@ -21,7 +24,7 @@ libraryDependencies ++= Dependencies.projectDeps
 
 cancelable in Global := true
 
-enablePlugins(sbtdocker.DockerPlugin)
+enablePlugins(BuildInfoPlugin, sbtdocker.DockerPlugin)
 
 dockerfile in docker := {
   val dockerFilesLocation = baseDirectory.value / "src/main/docker/"
@@ -63,3 +66,9 @@ imageNames in docker := Seq(
     tag = Some(version.value)
   )
 )
+
+buildInfoKeys := Seq[BuildInfoKey](name, version, scalaVersion, sbtVersion, git.gitCurrentBranch, git.gitCurrentTags, git.gitHeadCommit)
+buildInfoPackage := "io.hydrosphere.sonar"
+buildInfoOptions += BuildInfoOption.ToJson
+buildInfoRenderFactory := ScalaCaseClassRenderer.apply
+unmanagedSourceDirectories in Compile += sourceManaged.value

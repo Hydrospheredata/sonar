@@ -2,6 +2,7 @@ package io.hydrosphere.sonar.actors.processors.metrics
 
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import akka.actor.typed.{ActorRef, Behavior}
+import io.hydrosphere.serving.monitoring.api.ExecutionInformation
 import io.hydrosphere.sonar.actors.Processor
 import io.hydrosphere.sonar.actors.writers.MetricWriter
 import io.hydrosphere.sonar.terms.{CounterMetricSpec, Metric}
@@ -17,21 +18,32 @@ object CounterProcessor {
   def behavior(context: ActorContext[Processor.MetricMessage], metricSpec: CounterMetricSpec, duration: FiniteDuration): Behavior[Processor.MetricMessage] = {
     Behaviors.withTimers { timers =>
       timers.startPeriodicTimer(TimerKey, Timeout, duration)
-      active(0, Set.empty, metricSpec, timers, context, duration)
+      active(0, Set.empty, List.empty, metricSpec, timers, context, duration)
     }
   }
 
-  def active(count: Long, saveToActors: Set[ActorRef[MetricWriter.Message]], metricSpec: CounterMetricSpec, timers: TimerScheduler[Processor.MetricMessage], context: ActorContext[Processor.MetricMessage], duration: FiniteDuration): Behavior[Processor.MetricMessage] = {
+  def active(
+    count: Long,
+    saveToActors: Set[ActorRef[MetricWriter.Message]],
+    payloads: List[ExecutionInformation],
+    metricSpec: CounterMetricSpec,
+    timers: TimerScheduler[Processor.MetricMessage],
+    context: ActorContext[Processor.MetricMessage],
+    duration: FiniteDuration
+  ): Behavior[Processor.MetricMessage] = {
+
     Behaviors.receiveMessage {
       case m: Processor.MetricRequest =>
-        active(count + 1, saveToActors + m.saveTo, metricSpec, timers, context, duration)
+        active(count + 1, saveToActors + m.saveTo, m.payload :: payloads, metricSpec, timers, context, duration)
       case Timeout =>
         context.log.debug("Timeout for counter buffering")
         val labels = Map(
-          "modelVersionId" -> metricSpec.modelVersionId.toString
+          "modelVersionId" -> metricSpec.modelVersionId.toString,
+          "traces" -> Traces.many(payloads.reverse)
         )
         saveToActors.foreach(_ ! MetricWriter.ProcessedMetric(Seq(Metric("counter", count.toDouble, labels, None))))
-        active(0, Set.empty, metricSpec, timers, context, duration)
+        active(0, Set.empty, List.empty, metricSpec, timers, context, duration)
     }
   }
+
 }

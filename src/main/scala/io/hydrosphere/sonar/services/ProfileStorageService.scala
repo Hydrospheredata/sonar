@@ -18,15 +18,17 @@ import org.bson.codecs.{Codec, DecoderContext, EncoderContext}
 import org.bson.{BsonReader, BsonWriter}
 import org.mongodb.scala.bson.codecs.DEFAULT_CODEC_REGISTRY
 import org.mongodb.scala.bson.{BsonObjectId, Decimal128}
-import org.mongodb.scala.model.UpdateOptions
-import org.mongodb.scala.{Document, MongoClient, MongoClientSettings, MongoCollection, MongoDatabase}
 import org.mongodb.scala.model.Filters._
+import org.mongodb.scala.model.UpdateOptions
+import org.mongodb.scala.{Document, MongoClient, MongoClientSettings, MongoCollection, MongoDatabase, model}
 
 import scala.collection.JavaConverters._
 import scala.math.BigDecimal.RoundingMode
 
 trait ProfileStorageService[F[_]] {
   def saveProfile(profile: PreprocessedProfile, profileSourceKind: ProfileSourceKind): F[Unit]
+  
+  def batchSaveProfiles(profiles: Seq[PreprocessedProfile], profileSourceKind: ProfileSourceKind): F[Unit]
 
   def getProfile(modelVersionId: Long, fieldName: String, sourceKind: ProfileSourceKind): F[Option[Profile]]
 
@@ -44,6 +46,9 @@ class ProfileStorageServiceDummyInterpreter[F[_]: Sync] extends ProfileStorageSe
 
   override def getPreprocessedDistinctNames(modelVersionId: Long, sourceKind: ProfileSourceKind): F[Seq[String]] =
     Sync[F].pure(Seq.empty)
+
+  override def batchSaveProfiles(profiles: Seq[PreprocessedProfile], profileSourceKind: ProfileSourceKind): F[Unit] =
+    Sync[F].unit
 }
 
 object ProfileStorageServiceMongoInterpreter {
@@ -65,7 +70,7 @@ object ProfileStorageServiceMongoInterpreter {
 
 import io.hydrosphere.sonar.services.ProfileStorageServiceMongoInterpreter._
 
-class ProfileStorageServiceMongoInterpreter[F[_]: Async](config: Configuration, state: Ref[F, ObjectIdState]) extends ProfileStorageService[F] {
+class ProfileStorageServiceMongoInterpreter[F[_]: Async](config: Configuration, state: Ref[F, ObjectIdState]) extends ProfileStorageService[F] with Logging {
   
   val codecRegistry: CodecRegistry = fromRegistries(
     fromCodecs(new BigDecimalScalaCodec),
@@ -246,6 +251,14 @@ class ProfileStorageServiceMongoInterpreter[F[_]: Async](config: Configuration, 
     ).toFuture().liftToAsync[F].map(_ => Unit)
   }
   
+  def batchSaveDocuments(documents: Seq[model.UpdateOneModel[Nothing]], profileSourceKind: ProfileSourceKind): F[Unit] = mongoClient.use { client =>
+    collection(profileSourceKind, database(client))
+      .bulkWrite(documents)
+      .toFuture()
+      .liftToAsync[F]
+      .map(_ => Unit)
+  }
+  
   override def saveProfile(profile: PreprocessedProfile, profileSourceKind: ProfileSourceKind): F[Unit] = profile match {
     case p: NumericalPreprocessedProfile => for {
       objectId <- getObjectId(p.modelVersionId, p.name)
@@ -256,6 +269,29 @@ class ProfileStorageServiceMongoInterpreter[F[_]: Async](config: Configuration, 
       objectId <- getObjectId(p.modelVersionId, p.name)
       updateDocument = textUpdateDocument(p, objectId)
       _ <- saveDocument(updateDocument, objectId, profileSourceKind)
+    } yield Unit
+  }
+
+
+  override def batchSaveProfiles(profiles: Seq[PreprocessedProfile], profileSourceKind: ProfileSourceKind): F[Unit] = {
+    implicitly[Sync[F]]
+    val docsF = profiles.toList.map {
+      case p: NumericalPreprocessedProfile => 
+        Sync[F].suspend(
+          getObjectId(p.modelVersionId, p.name)
+            .map(objectId => model.UpdateOneModel(
+              filter = Document("_id" -> objectId),
+              update = numericalUpdateDocument(p, objectId),
+              updateOptions = (new UpdateOptions).upsert(true)
+            ))
+        )
+      case _ => ???
+    }
+    for {
+      _ <- Sync[F].delay(logger.info(s"Saving batch profiles: ${profiles.size}"))
+      docs <- docsF.sequence[F, model.UpdateOneModel[Nothing]]
+      _ <- batchSaveDocuments(docs, profileSourceKind)
+      _ <- Sync[F].delay(logger.info(s"${profiles.size} profiles was saved"))
     } yield Unit
   }
 
