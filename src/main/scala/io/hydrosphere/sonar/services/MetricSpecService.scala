@@ -1,6 +1,5 @@
 package io.hydrosphere.sonar.services
 
-import cats.{Monad, MonadError}
 import cats.implicits._
 import cats.effect._
 import doobie._
@@ -55,6 +54,12 @@ class MetricSpecServiceInterpreter[F[_] : Sync](transactor: Transactor[F]) exten
     sql"""
          INSERT INTO metric_specs(kind, name, modelVersionId, config, withHealth, id)
          VALUES (${kind(metricSpec)}, $name, $modelVersionId, ${metricSpec.config.asJson}, $withHealth, $id)
+         ON CONFLICT (id) DO UPDATE
+         SET kind = ${kind(metricSpec)},
+             name = $name,
+             modelVersionId = $modelVersionId,
+             config = ${metricSpec.config.asJson},
+             withHealth = $withHealth
        """.update.run.map(_ => metricSpec).transact(transactor)
   }
 
