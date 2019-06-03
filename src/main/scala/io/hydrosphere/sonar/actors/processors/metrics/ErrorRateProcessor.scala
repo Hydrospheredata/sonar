@@ -6,6 +6,7 @@ import io.hydrosphere.serving.monitoring.api.ExecutionInformation
 import io.hydrosphere.sonar.actors.Processor
 import io.hydrosphere.sonar.actors.writers.MetricWriter
 import io.hydrosphere.sonar.terms.{ErrorRateMetricSpec, Metric}
+import io.hydrosphere.sonar.utils.ExecutionInformationOps._
 
 import scala.concurrent.duration.FiniteDuration
 
@@ -48,7 +49,11 @@ object ErrorRateProcessor {
         val health = if (metricSpec.withHealth) {
           metricSpec.config.threshold.map(_ > count.toDouble)
         } else None
-        saveToActors.foreach(_ ! MetricWriter.ProcessedMetric(Seq(Metric("error_rate", count.toDouble, labels, health))))
+        val metrics = payloads.lastOption match {
+          case Some(ei) => Seq(Metric("error_rate", count.toDouble, labels, health, ei.getTimestamp))
+          case None => Seq(Metric("error_rate", count.toDouble, labels, health))
+        }
+        saveToActors.foreach(_ ! MetricWriter.ProcessedMetric(metrics))
         active(0, Set.empty, List.empty, metricSpec, timers, context, duration)
     }
   }

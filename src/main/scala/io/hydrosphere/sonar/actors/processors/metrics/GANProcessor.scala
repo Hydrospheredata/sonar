@@ -31,8 +31,8 @@ class GANProcessor(context: ActorContext[Processor.MetricMessage], metricSpec: G
             "trace" -> Traces.single(payload)
           )
           val metrics = Seq(
-            Metric("gan_outlier", outlier, labels, health),
-            Metric("gan_inlier", inlier, labels, health)
+            Metric("gan_outlier", outlier, labels, health, payload.getTimestamp),
+            Metric("gan_inlier", inlier, labels, health, payload.getTimestamp)
           )
           saveTo ! MetricWriter.ProcessedMetric(metrics)
         case Left(exc) => context.log.error(exc, s"Error while requesting GAN (${metricSpec.config.applicationName}) prediction for modelVersion ${metricSpec.modelVersionId}")

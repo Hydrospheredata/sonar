@@ -32,7 +32,7 @@ class RFProcessor(context: ActorContext[Processor.MetricMessage], metricSpec: RF
             "modelVersionId" -> metricSpec.modelVersionId.toString,
             "trace" -> Traces.single(payload)
           )
-          val metric = Metric("randomforest", score, labels, health)
+          val metric = Metric("randomforest", score, labels, health, payload.getTimestamp)
           saveTo ! MetricWriter.ProcessedMetric(Seq(metric))
         case Left(exc) => context.log.error(exc, s"Error while requesting RF prediction (${metricSpec.config.applicationName}) for modelVersion ${metricSpec.modelVersionId}")
       }

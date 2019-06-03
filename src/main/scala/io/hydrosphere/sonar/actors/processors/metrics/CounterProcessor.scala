@@ -6,6 +6,7 @@ import io.hydrosphere.serving.monitoring.api.ExecutionInformation
 import io.hydrosphere.sonar.actors.Processor
 import io.hydrosphere.sonar.actors.writers.MetricWriter
 import io.hydrosphere.sonar.terms.{CounterMetricSpec, Metric}
+import io.hydrosphere.sonar.utils.ExecutionInformationOps._
 
 import scala.concurrent.duration.FiniteDuration
 
@@ -41,7 +42,11 @@ object CounterProcessor {
           "modelVersionId" -> metricSpec.modelVersionId.toString,
           "traces" -> Traces.many(payloads.reverse)
         )
-        saveToActors.foreach(_ ! MetricWriter.ProcessedMetric(Seq(Metric("counter", count.toDouble, labels, None))))
+        val metrics = payloads.lastOption match {
+          case Some(ei) => Seq(Metric("counter", count.toDouble, labels, None, ei.getTimestamp))
+          case None => Seq(Metric("counter", count.toDouble, labels, None))
+        }
+        saveToActors.foreach(_ ! MetricWriter.ProcessedMetric(metrics))
         active(0, Set.empty, List.empty, metricSpec, timers, context, duration)
     }
   }

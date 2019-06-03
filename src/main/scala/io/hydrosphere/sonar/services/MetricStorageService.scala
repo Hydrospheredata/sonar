@@ -83,7 +83,7 @@ class MetricStorageServiceInfluxInterpreter[F[_] : Async](config: Configuration)
         "trace" -> Try(record("trace").toString).getOrElse("")
       ),
       health = Option(record("health")).map(_.toString == "1"),
-      timestamp = Instant.parse(record("time").toString).getEpochSecond
+      timestamp = Instant.parse(record("time").toString).toEpochMilli
     )
   }
 
@@ -101,10 +101,10 @@ class MetricStorageServiceInfluxInterpreter[F[_] : Async](config: Configuration)
     val (defaultDate:String, selector:String) = bound match {
       case Upper() => (dateFormater.print(new Date().getTime), "last(value)" )
       case Lower() => (dateFormater.print(0L), "first(value)" )
-      case _ => throw new RuntimeException(s"wtf: what are you? ${bound}")
+      case _ => throw new RuntimeException(s"wtf: what are you? $bound")
     }
 
-    val query = s"""SELECT time, ${selector} FROM ${metrics.mkString(",")}  WHERE modelVersionId = '${modelVersionId}' """
+    val query = s"""SELECT time, $selector FROM ${metrics.mkString(",")}  WHERE modelVersionId = '$modelVersionId' """
 
     database.use{ db =>
 

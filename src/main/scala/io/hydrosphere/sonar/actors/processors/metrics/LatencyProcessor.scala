@@ -3,10 +3,10 @@ package io.hydrosphere.sonar.actors.processors.metrics
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import akka.actor.typed.{ActorRef, Behavior}
 import io.hydrosphere.serving.monitoring.api.ExecutionInformation
-import io.hydrosphere.serving.monitoring.api.ExecutionInformation.ResponseOrError
 import io.hydrosphere.sonar.actors.Processor
 import io.hydrosphere.sonar.actors.writers.MetricWriter
 import io.hydrosphere.sonar.terms.{LatencyMetricSpec, Metric}
+import io.hydrosphere.sonar.utils.ExecutionInformationOps._
 
 import scala.concurrent.duration.FiniteDuration
 import scala.util.Try
@@ -54,7 +54,11 @@ object LatencyProcessor {
         val health = if (metricSpec.withHealth) {
           metricSpec.config.threshold.map(_ >= latency)
         } else None
-        saveToActors.foreach(_ ! MetricWriter.ProcessedMetric(Seq(Metric("latency", latency, labels, health))))
+        val metrics = payloads.lastOption match {
+          case Some(ei) => Seq(Metric("latency", latency, labels, health, ei.getTimestamp))
+          case None => Seq(Metric("latency", latency, labels, health))
+        }
+        saveToActors.foreach(_ ! MetricWriter.ProcessedMetric(metrics))
         active(0, 0, Set.empty, List.empty, metricSpec, timers, context, duration)
     }
   }

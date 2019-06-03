@@ -52,9 +52,13 @@ object KSProcessor {
       val health = if (metricSpec.withHealth) {
         Some(ksResult.value <= ksResult.rejectionLevel)
       } else None
+      val time = requests.lastOption.map(_.payload) match {
+        case Some(ei) => ei.getTimestamp
+        case None => 0L
+      }
       Seq(
-        Metric("kolmogorovsmirnov", ksResult.value, labels, health),
-        Metric("kolmogorovsmirnov_level", ksResult.rejectionLevel, labels, health)
+        Metric("kolmogorovsmirnov", ksResult.value, labels, health, time),
+        Metric("kolmogorovsmirnov_level", ksResult.rejectionLevel, labels, health, time)
       )
     }      
   }

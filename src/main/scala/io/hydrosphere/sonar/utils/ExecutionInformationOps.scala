@@ -22,6 +22,24 @@ object ExecutionInformationOps extends Logging {
       } yield input.toStrings
       maybeFlat.getOrElse(Seq.empty)
     }
+    
+    def getTimestamp: Long = {
+      val maybeOriginTimestamp = for {
+        metadata <- ei.metadata
+        traceData <- metadata.originTraceData
+      } yield traceData.ts
+      
+      val maybeTimestamp = for {
+        metadata <- ei.metadata
+        traceData <- metadata.traceData
+      } yield traceData.ts
+      
+      (maybeOriginTimestamp, maybeTimestamp) match {
+        case (Some(ts), _) => ts
+        case (None, Some(ts)) => ts
+        case (None, None) => System.currentTimeMillis()
+      }
+    }
   }
   
 }

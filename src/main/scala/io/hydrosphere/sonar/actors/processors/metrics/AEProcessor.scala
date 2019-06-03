@@ -38,7 +38,8 @@ class AEProcessor(context: ActorContext[Processor.MetricMessage], metricSpec: AE
             Map(
               "modelVersionId" -> metricSpec.modelVersionId.toString,
               "trace" -> Traces.single(payload)),
-            health)
+            health,
+            payload.getTimestamp)
           saveTo ! MetricWriter.ProcessedMetric(Seq(metric))
         case Left(exc) => context.log.error(exc, s"Error while requesting AE (${metricSpec.config.applicationName}) prediction for modelVersion ${metricSpec.modelVersionId}")
       }
