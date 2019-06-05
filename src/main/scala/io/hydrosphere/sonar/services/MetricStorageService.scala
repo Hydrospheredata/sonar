@@ -9,8 +9,13 @@ import com.paulgoldbaum.influxdbclient.Parameter.Precision
 import com.paulgoldbaum.influxdbclient._
 import io.hydrosphere.sonar.Logging
 import io.hydrosphere.sonar.config.Configuration
-import io.hydrosphere.sonar.terms.{Metric, MetricsAggregation}
+import io.hydrosphere.sonar.terms.{Metric, MetricLabels, MetricsAggregation}
 import io.hydrosphere.sonar.utils.FutureOps._
+import io.circe._
+import io.circe.parser.decode
+import io.circe.syntax._
+import io.circe.generic.auto._
+import io.hydrosphere.serving.monitoring.metadata.TraceData
 import org.joda.time.format.ISODateTimeFormat
 
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -76,11 +81,18 @@ class MetricStorageServiceInfluxInterpreter[F[_] : Async](config: Configuration)
     Metric(
       name = name,
       value = record("value").asInstanceOf[BigDecimal].toDouble,
-      labels = Map(
-        "modelVersionId" -> record("modelVersionId").toString,
-        "columnIndex" -> Try(record("columnIndex").toString).getOrElse(""),
-        "traces" -> Try(record("traces").toString).getOrElse(""),
-        "trace" -> Try(record("trace").toString).getOrElse("")
+      labels = MetricLabels(
+        modelVersionId = record("modelVersionId").toString.toLong,
+        metricSpecId = record("metricSpecId").toString,
+        traces = (for {
+          json <- Try(record("traces").toString)
+          parsed <- decode[Seq[Option[TraceData]]](json).toTry
+        } yield parsed).getOrElse(Seq.empty[Option[TraceData]]),
+        originTraces = (for {
+          json <- Try(record("originTraces").toString)
+          parsed <- decode[Seq[Option[TraceData]]](json).toTry
+        } yield parsed).getOrElse(Seq.empty[Option[TraceData]]),
+        columnIndex = Try(record("columnIndex").toString.toInt).toOption
       ),
       health = Option(record("health")).map(_.toString == "1"),
       timestamp = Instant.parse(record("time").toString).toEpochMilli
@@ -193,10 +205,10 @@ class MetricStorageServiceInfluxInterpreter[F[_] : Async](config: Configuration)
     val columnIndexClause = columnIndex.map(ci => s""" AND "columnIndex" = '$ci' """).getOrElse("")
 
     val query =
-      s"""SELECT "value", "health", "modelVersionId"::tag, "columnIndex"::tag, "traces"::tag, "trace"::tag 
+      s"""SELECT "value", "health", "metricSpecId"::tag, "modelVersionId"::tag, "columnIndex"::tag, "traces"::tag, "originTraces"::tag 
          |FROM ${metrics.mkString(",")} 
          |WHERE "modelVersionId" = '$modelVersionId' AND time >= now() - ${interval / 60000}m AND "metricSpecId" = '$metricSpecId' $columnIndexClause""".stripMargin
-
+    
     database.use { db =>
       db.query(query)
         .liftToAsync[F]
@@ -215,11 +227,15 @@ class MetricStorageServiceInfluxInterpreter[F[_] : Async](config: Configuration)
         case Some(h) => point.addField("health", if (h) 1 else 0)
         case None => point // pass
       }
-      metric.labels.foreach({ case (k, v) =>
-        if (v != "" && v != null) {
-          point = point.addTag(k, v)
-        }
-      })
+      point = point
+        .addTag("metricSpecId", metric.labels.metricSpecId)
+        .addTag("modelVersionId", metric.labels.modelVersionId.toString)
+        .addTag("traces", metric.labels.traces.asJson.noSpaces)
+        .addTag("originTraces", metric.labels.originTraces.asJson.noSpaces)
+      if (metric.labels.columnIndex.nonEmpty) {
+        point = point.addTag("columnIndex", metric.labels.columnIndex.get.toString)
+      }
+
       point
     }
     database.use { db =>

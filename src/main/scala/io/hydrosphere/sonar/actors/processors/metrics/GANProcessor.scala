@@ -8,7 +8,7 @@ import io.hydrosphere.serving.tensorflow.tensor.DoubleTensor
 import io.hydrosphere.sonar.actors.Processor
 import io.hydrosphere.sonar.actors.writers.MetricWriter
 import io.hydrosphere.sonar.services.PredictionService
-import io.hydrosphere.sonar.terms.{GANMetricSpec, Metric}
+import io.hydrosphere.sonar.terms.{GANMetricSpec, Metric, MetricLabels}
 import io.hydrosphere.sonar.utils.ExecutionInformationOps._
 
 class GANProcessor(context: ActorContext[Processor.MetricMessage], metricSpec: GANMetricSpec)(implicit predictionService: PredictionService[IO]) extends AbstractBehavior[Processor.MetricMessage] {
@@ -26,10 +26,11 @@ class GANProcessor(context: ActorContext[Processor.MetricMessage], metricSpec: G
           val health = if (metricSpec.withHealth) {
             Some(outlier < inlier)
           } else None
-          val labels = Map(
-            "modelVersionId" -> metricSpec.modelVersionId.toString,
-            "trace" -> Traces.single(payload),
-            "metricSpecId" -> metricSpec.id.toString
+          val labels = MetricLabels(
+            modelVersionId = metricSpec.modelVersionId,
+            metricSpecId = metricSpec.id,
+            traces = Traces.single(payload),
+            originTraces = OriginTraces.single(payload)
           )
           val metrics = Seq(
             Metric("gan_outlier", outlier, labels, health, payload.getTimestamp),

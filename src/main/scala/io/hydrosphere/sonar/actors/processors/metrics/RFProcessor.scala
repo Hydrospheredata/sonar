@@ -8,7 +8,7 @@ import io.hydrosphere.serving.tensorflow.tensor.DoubleTensor
 import io.hydrosphere.sonar.actors.Processor
 import io.hydrosphere.sonar.actors.writers.MetricWriter
 import io.hydrosphere.sonar.services.PredictionService
-import io.hydrosphere.sonar.terms.{Metric, RFMetricSpec}
+import io.hydrosphere.sonar.terms.{Metric, MetricLabels, RFMetricSpec}
 import io.hydrosphere.sonar.utils.ExecutionInformationOps._
 
 class RFProcessor(context: ActorContext[Processor.MetricMessage], metricSpec: RFMetricSpec)(implicit predictionService: PredictionService[IO]) extends AbstractBehavior[Processor.MetricMessage] {
@@ -28,10 +28,11 @@ class RFProcessor(context: ActorContext[Processor.MetricMessage], metricSpec: RF
             Some(score <= metricSpec.config.threshold.getOrElse(Double.MaxValue))
           } else None
           
-          val labels = Map(
-            "modelVersionId" -> metricSpec.modelVersionId.toString,
-            "trace" -> Traces.single(payload),
-            "metricSpecId" -> metricSpec.id.toString
+          val labels = MetricLabels(
+            modelVersionId = metricSpec.modelVersionId,
+            metricSpecId = metricSpec.id,
+            traces = Traces.single(payload),
+            originTraces = OriginTraces.single(payload)
           )
           val metric = Metric("randomforest", score, labels, health, payload.getTimestamp)
           saveTo ! MetricWriter.ProcessedMetric(Seq(metric))

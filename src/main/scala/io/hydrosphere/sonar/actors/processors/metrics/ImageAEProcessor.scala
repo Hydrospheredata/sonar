@@ -7,7 +7,7 @@ import io.hydrosphere.sonar.actors.Processor
 import io.hydrosphere.sonar.actors.Processor.{MetricMessage, MetricRequest}
 import io.hydrosphere.sonar.actors.writers.MetricWriter
 import io.hydrosphere.sonar.services.PredictionService
-import io.hydrosphere.sonar.terms.{ImageAEMetricSpec, Metric}
+import io.hydrosphere.sonar.terms.{ImageAEMetricSpec, Metric, MetricLabels}
 import io.hydrosphere.sonar.utils.ExecutionInformationOps._
 
 class ImageAEProcessor(context: ActorContext[Processor.MetricMessage], metricSpec: ImageAEMetricSpec)(implicit predictionService: PredictionService[IO]) extends AbstractBehavior[Processor.MetricMessage] {
@@ -30,10 +30,11 @@ class ImageAEProcessor(context: ActorContext[Processor.MetricMessage], metricSpe
               } else None
               val metric = Metric(
                 "image_autoencoder_reconstructed", reconstructed,
-                Map(
-                  "modelVersionId" -> metricSpec.modelVersionId.toString,
-                  "trace" -> Traces.single(payload),
-                  "metricSpecId" -> metricSpec.id.toString
+                MetricLabels(
+                  modelVersionId = metricSpec.modelVersionId,
+                  metricSpecId = metricSpec.id,
+                  traces = Traces.single(payload),
+                  originTraces = OriginTraces.single(payload)
                 ),
                 health,
                 payload.getTimestamp)

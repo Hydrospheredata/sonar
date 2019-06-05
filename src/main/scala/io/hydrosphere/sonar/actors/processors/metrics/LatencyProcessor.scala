@@ -5,7 +5,7 @@ import akka.actor.typed.{ActorRef, Behavior}
 import io.hydrosphere.serving.monitoring.api.ExecutionInformation
 import io.hydrosphere.sonar.actors.Processor
 import io.hydrosphere.sonar.actors.writers.MetricWriter
-import io.hydrosphere.sonar.terms.{LatencyMetricSpec, Metric}
+import io.hydrosphere.sonar.terms.{LatencyMetricSpec, Metric, MetricLabels}
 import io.hydrosphere.sonar.utils.ExecutionInformationOps._
 
 import scala.concurrent.duration.FiniteDuration
@@ -47,15 +47,16 @@ object LatencyProcessor {
         } else {
           sum / count
         }
-        val labels = Map(
-          "modelVersionId" -> metricSpec.modelVersionId.toString,
-          "traces" -> Traces.many(payloads.reverse),
-          "metricSpecId" -> metricSpec.id.toString
+        val labels = MetricLabels(
+          modelVersionId = metricSpec.modelVersionId,
+          metricSpecId = metricSpec.id,
+          traces = Traces.many(payloads.reverse),
+          originTraces = OriginTraces.many(payloads.reverse)
         )
         val health = if (metricSpec.withHealth) {
           metricSpec.config.threshold.map(_ >= latency)
         } else None
-        val metrics = payloads.lastOption match {
+        val metrics = payloads.headOption match {
           case Some(ei) => Seq(Metric("latency", latency, labels, health, ei.getTimestamp))
           case None => Seq(Metric("latency", latency, labels, health))
         }
