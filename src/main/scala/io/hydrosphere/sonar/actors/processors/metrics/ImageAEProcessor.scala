@@ -32,7 +32,9 @@ class ImageAEProcessor(context: ActorContext[Processor.MetricMessage], metricSpe
                 "image_autoencoder_reconstructed", reconstructed,
                 Map(
                   "modelVersionId" -> metricSpec.modelVersionId.toString,
-                  "trace" -> Traces.single(payload)),
+                  "trace" -> Traces.single(payload),
+                  "metricSpecId" -> metricSpec.id.toString
+                ),
                 health,
                 payload.getTimestamp)
               saveTo ! MetricWriter.ProcessedMetric(Seq(metric))

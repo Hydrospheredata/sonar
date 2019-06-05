@@ -28,7 +28,8 @@ class GANProcessor(context: ActorContext[Processor.MetricMessage], metricSpec: G
           } else None
           val labels = Map(
             "modelVersionId" -> metricSpec.modelVersionId.toString,
-            "trace" -> Traces.single(payload)
+            "trace" -> Traces.single(payload),
+            "metricSpecId" -> metricSpec.id.toString
           )
           val metrics = Seq(
             Metric("gan_outlier", outlier, labels, health, payload.getTimestamp),

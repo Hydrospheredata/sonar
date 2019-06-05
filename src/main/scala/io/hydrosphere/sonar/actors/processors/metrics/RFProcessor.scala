@@ -30,7 +30,8 @@ class RFProcessor(context: ActorContext[Processor.MetricMessage], metricSpec: RF
           
           val labels = Map(
             "modelVersionId" -> metricSpec.modelVersionId.toString,
-            "trace" -> Traces.single(payload)
+            "trace" -> Traces.single(payload),
+            "metricSpecId" -> metricSpec.id.toString
           )
           val metric = Metric("randomforest", score, labels, health, payload.getTimestamp)
           saveTo ! MetricWriter.ProcessedMetric(Seq(metric))

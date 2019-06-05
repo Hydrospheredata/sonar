@@ -19,7 +19,7 @@ import scala.util.Try
 trait MetricStorageService[F[_]] {
   def saveMetrics(metrics: Seq[Metric]): F[Unit]
 
-  def getMetrics(modelVersionId: Long, interval: Long, metrics: Seq[String], columnIndex: Option[String]): F[Seq[Metric]]
+  def getMetrics(modelVersionId: Long, interval: Long, metrics: Seq[String], metricSpecId: String, columnIndex: Option[String]): F[Seq[Metric]]
 
   def getMetricsAggregationRange(modelVersionId: Long,
                                  metrics: Seq[String],
@@ -35,7 +35,7 @@ class MetricStorageServiceDummyInterpreter[F[_] : Sync] extends MetricStorageSer
     Sync[F].delay(logger.debug(s"Saving ${metrics.size} metrics"))
   }
 
-  override def getMetrics(modelVersionId: Long, interval: Long, metrics: Seq[String], columnIndex: Option[String]): F[Seq[Metric]] =
+  override def getMetrics(modelVersionId: Long, interval: Long, metrics: Seq[String], metricSpecId: String, columnIndex: Option[String]): F[Seq[Metric]] =
     Sync[F].pure(Seq.empty)
 
   override def getMetricsAggregationRange(modelVersionId: Long, metrics: Seq[String], from: Option[Long], till: Option[Long], steps: Int): F[Seq[MetricsAggregation]] = Sync[F].pure(Seq.empty)
@@ -189,10 +189,13 @@ class MetricStorageServiceInfluxInterpreter[F[_] : Async](config: Configuration)
 
   }
 
-  override def getMetrics(modelVersionId: Long, interval: Long, metrics: Seq[String], columnIndex: Option[String]): F[Seq[Metric]] = {
+  override def getMetrics(modelVersionId: Long, interval: Long, metrics: Seq[String],metricSpecId: String, columnIndex: Option[String]): F[Seq[Metric]] = {
     val columnIndexClause = columnIndex.map(ci => s""" AND "columnIndex" = '$ci' """).getOrElse("")
 
-    val query = s"""SELECT "value", "health", "modelVersionId"::tag, "columnIndex"::tag, "traces"::tag, "trace"::tag FROM ${metrics.mkString(",")} WHERE "modelVersionId" = '$modelVersionId' AND time >= now() - ${interval / 60000}m $columnIndexClause"""
+    val query =
+      s"""SELECT "value", "health", "modelVersionId"::tag, "columnIndex"::tag, "traces"::tag, "trace"::tag 
+         |FROM ${metrics.mkString(",")} 
+         |WHERE "modelVersionId" = '$modelVersionId' AND time >= now() - ${interval / 60000}m AND "metricSpecId" = '$metricSpecId' $columnIndexClause""".stripMargin
 
     database.use { db =>
       db.query(query)

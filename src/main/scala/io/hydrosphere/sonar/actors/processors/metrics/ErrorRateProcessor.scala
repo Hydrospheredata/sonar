@@ -44,7 +44,8 @@ object ErrorRateProcessor {
         context.log.debug("Timeout for error rate buffering")
         val labels = Map(
           "modelVersionId" -> metricSpec.modelVersionId.toString,
-          "traces" -> Traces.many(payloads.reverse)
+          "traces" -> Traces.many(payloads.reverse),
+          "metricSpecId" -> metricSpec.id.toString
         )
         val health = if (metricSpec.withHealth) {
           metricSpec.config.threshold.map(_ > count.toDouble)

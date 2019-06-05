@@ -40,7 +40,8 @@ object CounterProcessor {
         context.log.debug("Timeout for counter buffering")
         val labels = Map(
           "modelVersionId" -> metricSpec.modelVersionId.toString,
-          "traces" -> Traces.many(payloads.reverse)
+          "traces" -> Traces.many(payloads.reverse),
+          "metricSpecId" -> metricSpec.id.toString
         )
         val metrics = payloads.lastOption match {
           case Some(ei) => Seq(Metric("counter", count.toDouble, labels, None, ei.getTimestamp))

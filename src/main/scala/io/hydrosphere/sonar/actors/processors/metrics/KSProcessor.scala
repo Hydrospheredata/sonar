@@ -46,7 +46,8 @@ object KSProcessor {
       val labels = Map(
         "modelVersionId" -> metricSpec.modelVersionId.toString,
         "columnIndex" -> idx.toString,
-        "traces" -> Traces.many(requests.map(_.payload))
+        "traces" -> Traces.many(requests.map(_.payload)),
+        "metricSpecId" -> metricSpec.id.toString
       )
       
       val health = if (metricSpec.withHealth) {
