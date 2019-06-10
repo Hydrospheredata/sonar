@@ -3,10 +3,10 @@ package io.hydrosphere.sonar.actors.processors.metrics
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import akka.actor.typed.{ActorRef, Behavior}
 import io.hydrosphere.serving.monitoring.api.ExecutionInformation
-import io.hydrosphere.serving.monitoring.api.ExecutionInformation.ResponseOrError
 import io.hydrosphere.sonar.actors.Processor
 import io.hydrosphere.sonar.actors.writers.MetricWriter
-import io.hydrosphere.sonar.terms.{LatencyMetricSpec, Metric}
+import io.hydrosphere.sonar.terms.{LatencyMetricSpec, Metric, MetricLabels}
+import io.hydrosphere.sonar.utils.ExecutionInformationOps._
 
 import scala.concurrent.duration.FiniteDuration
 import scala.util.Try
@@ -47,14 +47,20 @@ object LatencyProcessor {
         } else {
           sum / count
         }
-        val labels = Map(
-          "modelVersionId" -> metricSpec.modelVersionId.toString,
-          "traces" -> Traces.many(payloads.reverse)
+        val labels = MetricLabels(
+          modelVersionId = metricSpec.modelVersionId,
+          metricSpecId = metricSpec.id,
+          traces = Traces.many(payloads.reverse),
+          originTraces = OriginTraces.many(payloads.reverse)
         )
         val health = if (metricSpec.withHealth) {
           metricSpec.config.threshold.map(_ >= latency)
         } else None
-        saveToActors.foreach(_ ! MetricWriter.ProcessedMetric(Seq(Metric("latency", latency, labels, health))))
+        val metrics = payloads.headOption match {
+          case Some(ei) => Seq(Metric("latency", latency, labels, health, ei.getTimestamp))
+          case None => Seq(Metric("latency", latency, labels, health))
+        }
+        saveToActors.foreach(_ ! MetricWriter.ProcessedMetric(metrics))
         active(0, 0, Set.empty, List.empty, metricSpec, timers, context, duration)
     }
   }

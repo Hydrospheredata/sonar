@@ -2,7 +2,7 @@ package io.hydrosphere.sonar.utils.math
 
 import cats.Semigroup
 import cats.implicits._
-import io.hydrosphere.sonar.terms.NumericalPreprocessedProfile
+import io.hydrosphere.sonar.terms.{NumericalPreprocessedProfile, TextPreprocessedProfile}
 
 trait Semigroups {
   implicit val hyperLogLogSemigroup: Semigroup[HyperLogLog] = (x: HyperLogLog, y: HyperLogLog) => {
@@ -30,9 +30,27 @@ trait Semigroups {
       x.missing + y.missing,
       math.min(x.min, y.min),
       math.max(x.max, y.max),
-      (x.histogramBins.toSeq ++ y.histogramBins.toSeq).groupBy(_._1).mapValues(_.map(_._2).sum),
+      x.histogramBins |+| y.histogramBins,
       x.hyperLogLog |+| y.hyperLogLog,
       x.countMinSketch |+| y.countMinSketch
+    )
+  }
+  
+  implicit val textPreprocessedProfileSemigroup: Semigroup[TextPreprocessedProfile] = (x: TextPreprocessedProfile, y: TextPreprocessedProfile) => {
+    assert(x.modelVersionId == y.modelVersionId && x.name == y.name)
+    TextPreprocessedProfile(
+      x.modelVersionId,
+      x.name,
+      x.size + y.size,
+      x.missing + y.missing,
+      x.sentimentSum + y.sentimentSum,
+      x.lengthSum + y.lengthSum,
+      x.tokenLengthSum + y.tokenLengthSum,
+      x.treeDepthSum + y.treeDepthSum,
+      x.uniqueLemmasSum + y.uniqueLemmasSum,
+      x.languagesSum |+| y.languagesSum,
+      x.posTagsSum |+| y.posTagsSum,
+      x.tokenHyperLogLog |+| y.tokenHyperLogLog
     )
   }
 }

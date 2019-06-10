@@ -15,7 +15,7 @@ import io.hydrosphere.sonar.utils.profiles.NumericalProfileUtils
 
 import scala.concurrent.duration.FiniteDuration
 
-object NumericalProfileProcessor {
+object NumericalProfileProcessor extends ProfileProcessor {
   
   case object TimeKey
   case object Timeout extends Processor.ProfileMessage
@@ -49,7 +49,7 @@ object NumericalProfileProcessor {
   }
   
   def process(requests: Vector[Processor.ProfileRequest], context: ActorContext[Processor.ProfileMessage], saveTo: ActorRef[ProfileWriter.ProcessedProfile], modelVersion: ModelVersion): Unit = {
-    val inputs = numericalInputs(modelVersion)
+    val inputs = numericalInputs(modelVersion, DataProfileType.NUMERICAL)
     inputs.foreach { input =>
       val flat = requests.map(r => r.payload.getDoubleInput(input))
       val transposed = CollectionOps.safeTranspose(flat)
@@ -63,7 +63,7 @@ object NumericalProfileProcessor {
   def active(timers: TimerScheduler[Processor.ProfileMessage], context: ActorContext[Processor.ProfileMessage], modelVersion: ModelVersion, saveTo: ActorRef[ProfileWriter.Message], duration: FiniteDuration, maxSize: Int, buffer: Vector[Processor.ProfileRequest]): Behavior[Processor.ProfileMessage] = {
     Behaviors.receiveMessage {
       case m: Processor.ProfileRequest =>
-        val newBuffer = buffer :+ filterRequest(m, modelVersion)
+        val newBuffer = buffer :+ filterRequest(m, modelVersion, DataProfileType.NUMERICAL)
         if (newBuffer.size == maxSize) {
           context.log.debug(s"Processing NumericalProfile for ${newBuffer.size} elements (max)")
           process(newBuffer, context, saveTo, modelVersion)

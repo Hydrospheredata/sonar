@@ -8,7 +8,7 @@ import io.hydrosphere.serving.monitoring.api.ExecutionInformation
 import io.hydrosphere.serving.tensorflow.api.predict.PredictRequest
 import io.hydrosphere.sonar.actors.Processor
 import io.hydrosphere.sonar.actors.writers.MetricWriter
-import io.hydrosphere.sonar.terms.{KSMetricSpec, Metric}
+import io.hydrosphere.sonar.terms.{KSMetricSpec, Metric, MetricLabels}
 import io.hydrosphere.sonar.utils.CollectionOps
 import io.hydrosphere.sonar.utils.ExecutionInformationOps._
 import io.hydrosphere.sonar.utils.math.{KolmogorovSmirnovTest, Statistics}
@@ -43,18 +43,24 @@ object KSProcessor {
     val transposed = CollectionOps.safeTranspose(flatRequests)
     transposed.filter(_.nonEmpty).map(l => NonEmptyList(l.head, l.toList.tail)).map(ksFn).zipWithIndex.flatMap { case (ksResult, idx) =>
       
-      val labels = Map(
-        "modelVersionId" -> metricSpec.modelVersionId.toString,
-        "columnIndex" -> idx.toString,
-        "traces" -> Traces.many(requests.map(_.payload))
+      val labels = MetricLabels(
+        modelVersionId = metricSpec.modelVersionId,
+        metricSpecId = metricSpec.id.toString,
+        traces = Traces.many(requests.map(_.payload)),
+        originTraces = OriginTraces.many(requests.map(_.payload)),
+        columnIndex = Some(idx)
       )
       
       val health = if (metricSpec.withHealth) {
         Some(ksResult.value <= ksResult.rejectionLevel)
       } else None
+      val time = requests.lastOption.map(_.payload) match {
+        case Some(ei) => ei.getTimestamp
+        case None => 0L
+      }
       Seq(
-        Metric("kolmogorovsmirnov", ksResult.value, labels, health),
-        Metric("kolmogorovsmirnov_level", ksResult.rejectionLevel, labels, health)
+        Metric("kolmogorovsmirnov", ksResult.value, labels, health, time),
+        Metric("kolmogorovsmirnov_level", ksResult.rejectionLevel, labels, health, time)
       )
     }      
   }

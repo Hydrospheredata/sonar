@@ -28,7 +28,7 @@ case class TextPreprocessedProfile(
   lengthSum: Long,
   tokenLengthSum: Long,
   treeDepthSum: Long,
-  uniqueLemmasSum: Long,
+  uniqueLemmasSum: Double,
   languagesSum: Map[String, Long],
   posTagsSum: Map[String, Long],
   tokenHyperLogLog: HyperLogLog

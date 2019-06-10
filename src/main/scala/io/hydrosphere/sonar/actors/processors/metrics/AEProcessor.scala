@@ -8,7 +8,7 @@ import io.hydrosphere.serving.tensorflow.tensor.DoubleTensor
 import io.hydrosphere.sonar.actors.Processor
 import io.hydrosphere.sonar.actors.writers.MetricWriter
 import io.hydrosphere.sonar.services.PredictionService
-import io.hydrosphere.sonar.terms.{AEMetricSpec, Metric}
+import io.hydrosphere.sonar.terms.{AEMetricSpec, Metric, MetricLabels}
 import io.hydrosphere.sonar.utils.ExecutionInformationOps._
 
 import scala.util.Try
@@ -35,10 +35,14 @@ class AEProcessor(context: ActorContext[Processor.MetricMessage], metricSpec: AE
           } else None
           val metric = Metric(
             "autoencoder_reconstructed", reconstructed,
-            Map(
-              "modelVersionId" -> metricSpec.modelVersionId.toString,
-              "trace" -> Traces.single(payload)),
-            health)
+            MetricLabels(
+              modelVersionId = metricSpec.modelVersionId,
+              metricSpecId = metricSpec.id,
+              traces = Traces.single(payload),
+              originTraces = OriginTraces.single(payload)
+            ),
+            health,
+            payload.getTimestamp)
           saveTo ! MetricWriter.ProcessedMetric(Seq(metric))
         case Left(exc) => context.log.error(exc, s"Error while requesting AE (${metricSpec.config.applicationName}) prediction for modelVersion ${metricSpec.modelVersionId}")
       }

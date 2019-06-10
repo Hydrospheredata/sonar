@@ -12,9 +12,33 @@ object ExecutionInformationOps extends Logging {
         r <- ei.request
         input <- r.inputs.get(input)
       } yield input.toDoubles
-      logger.info(s"$ei")
-      logger.info(s"$maybeFlat")
-      maybeFlat.getOrElse(Seq.empty[Double])
+      maybeFlat.getOrElse(Seq.empty)
+    }
+    
+    def getStringInput(input: String): Seq[String] = {
+      val maybeFlat = for {
+        r <- ei.request
+        input <- r.inputs.get(input)
+      } yield input.toStrings
+      maybeFlat.getOrElse(Seq.empty)
+    }
+    
+    def getTimestamp: Long = {
+      val maybeOriginTimestamp = for {
+        metadata <- ei.metadata
+        traceData <- metadata.originTraceData
+      } yield traceData.ts
+      
+      val maybeTimestamp = for {
+        metadata <- ei.metadata
+        traceData <- metadata.traceData
+      } yield traceData.ts
+      
+      (maybeOriginTimestamp, maybeTimestamp) match {
+        case (Some(ts), _) => ts / 1000000
+        case (None, Some(ts)) => ts / 1000000
+        case (None, None) => System.currentTimeMillis()
+      }
     }
   }
   

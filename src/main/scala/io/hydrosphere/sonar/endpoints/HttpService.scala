@@ -115,9 +115,15 @@ class HttpService[F[_] : Monad : Effect](
       metricStorageService.getMetricsRange(modelVersionId, from, till, metrics, columnIndex, health).map(Ok)
   }
   
-  def getMetrics = get("monitoring" :: "metrics" :: param[Long]("modelVersionId") :: param[Long]("interval") :: params[String]("metrics") :: paramOption[String]("columnIndex")) 
-  { (modelVersionId: Long, interval: Long, metrics: List[String], columnIndex: Option[String]) =>
-    metricStorageService.getMetrics(modelVersionId, interval, metrics, columnIndex).map(Ok)
+  def getMetrics = get("monitoring" 
+    :: "metrics" 
+    :: param[Long]("modelVersionId") 
+    :: param[Long]("interval") 
+    :: params[String]("metrics") 
+    :: param[String]("metricSpecId")
+    :: paramOption[String]("columnIndex")) 
+  { (modelVersionId: Long, interval: Long, metrics: List[String], metricSpecId: String, columnIndex: Option[String]) =>
+    metricStorageService.getMetrics(modelVersionId, interval, metrics, metricSpecId, columnIndex).map(Ok)
   }
   
   def getProfiles = get("monitoring" :: "profiles" :: path[Long] :: path[String]) { (modelVersionId: Long, fieldName: String) =>

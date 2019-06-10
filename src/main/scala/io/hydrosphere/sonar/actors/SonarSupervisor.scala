@@ -5,7 +5,7 @@ import akka.actor.typed.{ActorRef, Behavior, PostStop, Signal, SupervisorStrateg
 import cats.effect.IO
 import io.hydrosphere.serving.manager.data_profile_types.DataProfileType
 import io.hydrosphere.serving.monitoring.api.ExecutionInformation
-import io.hydrosphere.sonar.actors.processors.profiles.NumericalProfileProcessor
+import io.hydrosphere.sonar.actors.processors.profiles.{NumericalProfileProcessor, TextProfileProcessor}
 import io.hydrosphere.sonar.actors.processors.subsampling.ReservoirProcessor
 import io.hydrosphere.sonar.actors.writers.{MetricWriter, ProfileWriter}
 import io.hydrosphere.sonar.config.{Configuration, Reservoir}
@@ -42,6 +42,8 @@ class SonarSupervisor(context: ActorContext[SonarSupervisor.Message])(implicit c
   private var metricChildren: Map[String, ActorRef[Processor.MetricMessage]] = Map.empty
   private var profileChildren: Map[(Long, DataProfileType), ActorRef[Processor.ProfileMessage]] = Map.empty
   private var subsamplingChildren: Map[Long, ActorRef[Processor.SubsamplingMessage]] = Map.empty
+  
+  private val textProfileProcessor: TextProfileProcessor = new TextProfileProcessor(config)
 
   private def processor[T: Processable](metricSpec: T): Behavior[Processor.MetricMessage] = metricSpec.processor
   
@@ -104,6 +106,10 @@ class SonarSupervisor(context: ActorContext[SonarSupervisor.Message])(implicit c
                   val modelDataTypes = inputs
                   if (modelDataTypes.contains(DataProfileType.NUMERICAL)) {
                     val actor = getOrCreateProfileActor(Behaviors.setup(ctx => NumericalProfileProcessor.behavior(ctx, modelVersion, profileWriter, 1 minute, 10)), modelVersionId, DataProfileType.NUMERICAL)
+                    actor ! Processor.ProfileRequest(payload)
+                  }
+                  if (modelDataTypes.contains(DataProfileType.TEXT)) {
+                    val actor = getOrCreateProfileActor(Behaviors.setup(ctx => textProfileProcessor.behavior(ctx, modelVersion, profileWriter, 1 minute, 10)), modelVersionId, DataProfileType.TEXT)
                     actor ! Processor.ProfileRequest(payload)
                   }
                 case None =>

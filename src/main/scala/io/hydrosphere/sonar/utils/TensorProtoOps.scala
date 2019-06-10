@@ -16,5 +16,10 @@ object TensorProtoOps {
       case unknownTensorType => throw new Exception(s"$unknownTensorType cannot be cast to Seq[Double]")
     }
     
+    def toStrings: Seq[String] = TypedTensorFactory.create(tensorProto) match {
+      case StringTensor(_, data) => data
+      case unknownTensorType => throw new Exception(s"$unknownTensorType cannot be cast to Seq[String]")
+    }
+    
   }
 }
