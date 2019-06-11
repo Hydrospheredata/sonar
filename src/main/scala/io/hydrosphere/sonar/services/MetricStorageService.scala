@@ -83,7 +83,7 @@ class MetricStorageServiceInfluxInterpreter[F[_] : Async](config: Configuration)
       value = record("value").asInstanceOf[BigDecimal].toDouble,
       labels = MetricLabels(
         modelVersionId = record("modelVersionId").toString.toLong,
-        metricSpecId = record("metricSpecId").toString,
+        metricSpecId = Try(record("metricSpecId").toString).getOrElse(""),
         traces = (for {
           json <- Try(record("traces").toString)
           parsed <- decode[Seq[Option[TraceData]]](json).toTry
