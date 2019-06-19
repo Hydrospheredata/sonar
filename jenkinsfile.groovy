@@ -1,22 +1,14 @@
-def repository = 'provectus/sonar2'
-
-def buildAndPublishReleaseFunction = {
-    //Buid app
-    def curVersion = getVersion()
-    sh "sbt -DappVersion=${curVersion} compile docker"
+node {
+  stage("trigger-central") {
+    build job: 'provectus.com/hydro-central/master', parameters: [
+      [$class: 'StringParameterValue',
+      name: 'PROJECT',
+      value: 'sonar'
+      ],
+      [$class: 'StringParameterValue',
+      name: 'BRANCH',
+      value: env.BRANCH_NAME
+      ]
+    ]
+  }
 }
-
-pipelineCommon(
-        repository,
-        false, //needSonarQualityGate,
-        ["docker.hydrosphere.io/sonar"],
-        {},
-        buildAndPublishReleaseFunction,
-        buildAndPublishReleaseFunction,
-        buildAndPublishReleaseFunction,
-        null,
-        "hydro_private_docker_registry",
-        "docker.hydrosphere.io",
-        {},
-        commitToCD("sonar")
-)
