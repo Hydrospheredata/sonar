@@ -58,7 +58,7 @@ dockerfile in docker := {
 }
 
 imageNames in docker := Seq(
-  ImageName(s"docker.hydrosphere.io/${name.value}:latest"),
+  ImageName(s"docker.hydrosphere.io/${name.value}:dev"),
 
   ImageName(
     namespace = Some("docker.hydrosphere.io"),

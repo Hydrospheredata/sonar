@@ -7,11 +7,27 @@ import io.hydrosphere.sonar.utils.TensorProtoOps._
 object ExecutionInformationOps extends Logging {
   
   implicit class ExecutionInformationGetters(ei: ExecutionInformation) {
+    def getDoubleOutput(output: String): Seq[Double] = {
+      val maybeFlat = for {
+        r <- ei.responseOrError.response
+        output <- r.outputs.get(output)
+      } yield output.toDoubles
+      maybeFlat.getOrElse(Seq.empty)
+    }
+
     def getDoubleInput(input: String): Seq[Double] = {
       val maybeFlat = for {
         r <- ei.request
         input <- r.inputs.get(input)
       } yield input.toDoubles
+      maybeFlat.getOrElse(Seq.empty)
+    }
+
+    def getStringOutput(output: String): Seq[String] = {
+      val maybeFlat = for {
+        r <- ei.responseOrError.response
+        output <- r.outputs.get(output)
+      } yield output.toStrings
       maybeFlat.getOrElse(Seq.empty)
     }
     
