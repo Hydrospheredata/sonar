@@ -58,12 +58,14 @@ class TextProfileProcessor(config: Configuration) extends ProfileProcessor {
   }
 
   def process(requests: Vector[Processor.ProfileRequest], context: ActorContext[Processor.ProfileMessage], saveTo: ActorRef[ProfileWriter.ProcessedProfile], modelVersion: ModelVersion): Unit = {
-    val inputs = numericalInputs(modelVersion, DataProfileType.TEXT)
-    inputs.foreach { input =>
-      val flat = requests.map(r => r.payload.getStringInput(input))
+    val inputs = filterInputs(modelVersion, DataProfileType.TEXT)
+      .map(input => (input, requests.map(r => r.payload.getStringInput(input))))
+    val outputs = filterOutputs(modelVersion, DataProfileType.TEXT)
+      .map(output => (output, requests.map(r => r.payload.getStringOutput(output))))
+    (inputs ++ outputs).foreach { case (field, flat) =>
       val transposed = CollectionOps.safeTranspose(flat)
       transposed.zipWithIndex.foreach { case (column, idx) =>
-        val name = s"${input}_$idx"
+        val name = s"${field}_$idx"
         val hyperLogLog = MutableHyperLogLog(14)
         var size = 0L
         var missing = 0L

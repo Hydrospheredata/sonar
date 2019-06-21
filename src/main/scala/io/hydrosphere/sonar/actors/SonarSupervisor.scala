@@ -84,7 +84,7 @@ class SonarSupervisor(context: ActorContext[SonarSupervisor.Message])(implicit c
       context.log.debug(s"Got Request: $payload".slice(0, 1024))
       payload.metadata match {
         case Some(metadata) =>
-          context.log.info(s"$metadata")
+          context.log.info(s"ExecutionMetadata(modelVersionId=${metadata.modelVersionId}, modelName=${metadata.modelName}, appInfo=${metadata.appInfo}, latency=${metadata.latency})")
           val modelVersionId = metadata.modelVersionId
           // Concept drift metrics
           // Each MetricSpec *must* have an appropriate processor
@@ -103,7 +103,8 @@ class SonarSupervisor(context: ActorContext[SonarSupervisor.Message])(implicit c
               modelVersion.contract.flatMap(_.predict) match {
                 case Some(signature) =>
                   val inputs = signature.inputs.map(_.profile)
-                  val modelDataTypes = inputs
+                  val outputs = signature.outputs.map(_.profile)
+                  val modelDataTypes = inputs ++ outputs
                   if (modelDataTypes.contains(DataProfileType.NUMERICAL)) {
                     val actor = getOrCreateProfileActor(Behaviors.setup(ctx => NumericalProfileProcessor.behavior(ctx, modelVersion, profileWriter, 1 minute, 10)), modelVersionId, DataProfileType.NUMERICAL)
                     actor ! Processor.ProfileRequest(payload)
