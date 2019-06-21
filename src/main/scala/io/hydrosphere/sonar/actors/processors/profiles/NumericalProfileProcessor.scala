@@ -14,32 +14,12 @@ import io.hydrosphere.sonar.utils.ExecutionInformationOps._
 import io.hydrosphere.sonar.utils.profiles.NumericalProfileUtils
 
 import scala.concurrent.duration.FiniteDuration
+import edu.stanford.nlp.patterns.Data
 
 object NumericalProfileProcessor extends ProfileProcessor {
   
   case object TimeKey
   case object Timeout extends Processor.ProfileMessage
-  
-  def numericalInputs(modelVersion: ModelVersion): Set[String] = {
-    modelVersion
-      .contract.flatMap(_.predict)
-      .map(_.inputs)
-      .getOrElse(Seq.empty)
-      .filter(x => x.profile == DataProfileType.NUMERICAL)
-      .map(_.name)
-      .toSet
-  }
-  
-  def filterRequest(request: Processor.ProfileRequest, modelVersion: ModelVersion): Processor.ProfileRequest = {
-    val inputs = numericalInputs(modelVersion)
-    ProfileRequest(
-      payload = ExecutionInformation(
-        request = request.payload.request.map(r => PredictRequest(r.modelSpec, r.inputs.filter({ case (key, _) => inputs.contains(key) }))),
-        metadata = request.payload.metadata,
-        responseOrError = ExecutionInformation.ResponseOrError.Empty
-      )
-    )
-  }
   
   def behavior(context: ActorContext[Processor.ProfileMessage], modelVersion: ModelVersion, saveTo: ActorRef[ProfileWriter.Message], duration: FiniteDuration, maxSize: Int): Behavior[Processor.ProfileMessage] = {
     Behaviors.withTimers { timers =>
@@ -49,12 +29,15 @@ object NumericalProfileProcessor extends ProfileProcessor {
   }
   
   def process(requests: Vector[Processor.ProfileRequest], context: ActorContext[Processor.ProfileMessage], saveTo: ActorRef[ProfileWriter.ProcessedProfile], modelVersion: ModelVersion): Unit = {
-    val inputs = numericalInputs(modelVersion, DataProfileType.NUMERICAL)
-    inputs.foreach { input =>
-      val flat = requests.map(r => r.payload.getDoubleInput(input))
+    val inputs = filterInputs(modelVersion, DataProfileType.NUMERICAL)
+      .map(input => (input, requests.map(r => r.payload.getDoubleInput(input))))
+    val outputs = filterOutputs(modelVersion, DataProfileType.NUMERICAL)
+      .map(output => (output, requests.map(_.payload.getDoubleOutput(output))))
+    
+    (inputs ++ outputs).foreach { case (field, flat) =>
       val transposed = CollectionOps.safeTranspose(flat)
       transposed.zipWithIndex.foreach { case (column, idx) => 
-        val preprocessedProfile = NumericalProfileUtils.fromColumn(modelVersion.id, input, idx, column)
+        val preprocessedProfile = NumericalProfileUtils.fromColumn(modelVersion.id, field, idx, column)
         saveTo ! ProfileWriter.ProcessedProfile(preprocessedProfile)
       }
     }
