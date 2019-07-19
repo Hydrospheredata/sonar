@@ -58,7 +58,7 @@ object LatencyProcessor {
         } else None
         val metrics = payloads.headOption match {
           case Some(ei) => Seq(Metric("latency", latency, labels, health, ei.getTimestamp))
-          case None => Seq(Metric("latency", latency, labels, health))
+          case None => Seq.empty[Metric]
         }
         saveToActors.foreach(_ ! MetricWriter.ProcessedMetric(metrics))
         active(0, 0, Set.empty, List.empty, metricSpec, timers, context, duration)

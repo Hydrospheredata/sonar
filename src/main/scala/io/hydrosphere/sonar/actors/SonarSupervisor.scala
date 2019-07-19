@@ -6,9 +6,8 @@ import cats.effect.IO
 import io.hydrosphere.serving.manager.data_profile_types.DataProfileType
 import io.hydrosphere.serving.monitoring.api.ExecutionInformation
 import io.hydrosphere.sonar.actors.processors.profiles.{NumericalProfileProcessor, TextProfileProcessor}
-import io.hydrosphere.sonar.actors.processors.subsampling.ReservoirProcessor
 import io.hydrosphere.sonar.actors.writers.{MetricWriter, ProfileWriter}
-import io.hydrosphere.sonar.config.{Configuration, Reservoir}
+import io.hydrosphere.sonar.config.Configuration
 import io.hydrosphere.sonar.services._
 import io.hydrosphere.sonar.terms.{MetricSpec, Processable}
 
@@ -21,7 +20,6 @@ object SonarSupervisor {
   final case class RemoveProcessor(metricSpecId: String) extends Message
   private[actors] final case class MetricProcessorWasTerminated(actor: ActorRef[Processor.MetricMessage]) extends Message
   private[actors] final case class ProfileProcessorWasTerminated(actor: ActorRef[Processor.ProfileMessage]) extends Message
-  private[actors] final case class SubsamplingProcessorWasTerminated(actor: ActorRef[Processor.SubsamplingMessage]) extends Message
 
   def apply(implicit config: Configuration, metricSpecService: MetricSpecService[IO], modelDataService: ModelDataService[IO], predictionService: PredictionService[IO], metricStorageService: MetricStorageService[IO], profileStorageService: ProfileStorageService[IO]): Behavior[Message] = Behaviors.setup[Message](context => new SonarSupervisor(context))
 }
@@ -41,7 +39,6 @@ class SonarSupervisor(context: ActorContext[SonarSupervisor.Message])(implicit c
   
   private var metricChildren: Map[String, ActorRef[Processor.MetricMessage]] = Map.empty
   private var profileChildren: Map[(Long, DataProfileType), ActorRef[Processor.ProfileMessage]] = Map.empty
-  private var subsamplingChildren: Map[Long, ActorRef[Processor.SubsamplingMessage]] = Map.empty
   
   private val textProfileProcessor: TextProfileProcessor = new TextProfileProcessor(config)
 
@@ -65,16 +62,6 @@ class SonarSupervisor(context: ActorContext[SonarSupervisor.Message])(implicit c
       val actor = context.spawn(behavior, s"${dataType}_$modelVersionId")
       profileChildren += (modelVersionId, dataType) -> actor
       context.watchWith(actor, ProfileProcessorWasTerminated(actor))
-      actor
-    })
-  }
-  
-  private def getOrCreateSubsamplingActor(behavior: Behavior[Processor.SubsamplingMessage], modelVersionId: Long): ActorRef[Processor.SubsamplingMessage] = {
-    subsamplingChildren.getOrElse(modelVersionId, {
-      context.log.debug(s"Creating new subsampling actor $modelVersionId")
-      val actor = context.spawn(behavior, s"subsamplin_$modelVersionId")
-      subsamplingChildren += modelVersionId -> actor
-      context.watchWith(actor, SubsamplingProcessorWasTerminated(actor))
       actor
     })
   }
@@ -118,13 +105,6 @@ class SonarSupervisor(context: ActorContext[SonarSupervisor.Message])(implicit c
               }
             case Left(exc) => context.log.error(exc, s"Error while getting ModelVersion")
           }
-          
-          // Subsampling
-          val behavior = config.subsampling match {
-            case Reservoir(size) => Behaviors.setup[Processor.SubsamplingMessage](ctx => new ReservoirProcessor(ctx, size))
-          }
-          val actor = getOrCreateSubsamplingActor(behavior, metadata.modelVersionId)
-          actor ! Processor.SubsamplingRequest(payload)
         case None => context.log.warning(s"Empty metadata: $payload")
       }
       this
@@ -145,10 +125,6 @@ class SonarSupervisor(context: ActorContext[SonarSupervisor.Message])(implicit c
     case ProfileProcessorWasTerminated(actor) =>
       context.log.debug(s"Profile Processor actor was terminated")
       profileChildren.find({ case (_, a) => a == actor }).foreach({ case (key, _) => profileChildren -= key })
-      this
-    case SubsamplingProcessorWasTerminated(actor) =>
-      context.log.debug(s"Subsampling actor was terminated")
-      subsamplingChildren.find({ case (_, a) => a == actor }).foreach({ case (key, _) => subsamplingChildren -= key })
       this
   }
 

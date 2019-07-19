@@ -53,7 +53,7 @@ object ErrorRateProcessor {
         } else None
         val metrics = payloads.headOption match {
           case Some(ei) => Seq(Metric("error_rate", count.toDouble, labels, health, ei.getTimestamp))
-          case None => Seq(Metric("error_rate", count.toDouble, labels, health))
+          case None => Seq.empty[Metric]
         }
         saveToActors.foreach(_ ! MetricWriter.ProcessedMetric(metrics))
         active(0, Set.empty, List.empty, metricSpec, timers, context, duration)

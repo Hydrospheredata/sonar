@@ -10,10 +10,17 @@ import io.circe.syntax._
 import io.circe.generic.extras.auto._
 import io.circe.generic.extras.{Configuration => CirceExtraConfiguration}
 import io.hydrosphere.sonar.utils.{MetricSpecDBReader, MetricSpecNotFound}
-import io.hydrosphere.sonar.terms.MetricSpec
+import io.hydrosphere.sonar.terms._
 import org.postgresql.util.PGobject
 
 trait MetricSpecService[F[_]] {
+  
+  def defaultMetricSpec(modelVersionId: Long): List[MetricSpec] = List(
+    LatencyMetricSpec("Latency", modelVersionId, HealthRateMetricSpecConfiguration(30, None), false, "fake-id-latency"),
+    CounterMetricSpec("Request Rate", modelVersionId, CounterMetricSpecConfiguration(30), false, "fake-id-counter"),
+    ErrorRateMetricSpec("Error Rate", modelVersionId, HealthRateMetricSpecConfiguration(30, None), false, "fake-id-error-rate")
+  )
+  
   def createMetricSpec(metricSpec: MetricSpec): F[MetricSpec]
   def getMetricSpecById(id: String): F[MetricSpec]
   def getMetricSpecsByModelVersion(modelVersionId: Long): F[List[MetricSpec]]
@@ -82,7 +89,14 @@ class MetricSpecServiceInterpreter[F[_] : Sync](transactor: Transactor[F]) exten
            SELECT kind, name, modelVersionId, config, withHealth, id
            FROM metric_specs
          """
-    sql.query[MetricSpecFields].stream.map(toMetricSpec).compile.toList.transact(transactor)
+    sql
+      .query[MetricSpecFields]
+      .stream
+      .map(toMetricSpec)
+      .compile
+      .toList
+      .map(metricSpecs => metricSpecs ++ metricSpecs.map(_.modelVersionId).distinct.flatMap(mvId => defaultMetricSpec(mvId)))
+      .transact(transactor)
   }
 
   override def getMetricSpecsByModelVersion(modelVersionId: Long): F[List[MetricSpec]] = {
@@ -92,7 +106,14 @@ class MetricSpecServiceInterpreter[F[_] : Sync](transactor: Transactor[F]) exten
            FROM metric_specs
            WHERE modelVersionId = $modelVersionId
          """
-    sql.query[MetricSpecFields].stream.map(toMetricSpec).compile.toList.transact(transactor)
+    sql
+      .query[MetricSpecFields]
+      .stream
+      .map(toMetricSpec)
+      .compile
+      .toList
+      .map(_ ++ defaultMetricSpec(modelVersionId))
+      .transact(transactor)
   }
 
   override def remove(id: String): F[Unit] = {

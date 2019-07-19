@@ -46,7 +46,7 @@ object CounterProcessor {
         )
         val metrics = payloads.headOption match {
           case Some(ei) => Seq(Metric("counter", count.toDouble, labels, None, ei.getTimestamp))
-          case None => Seq(Metric("counter", count.toDouble, labels, None))
+          case None => Seq.empty[Metric]
         }
         saveToActors.foreach(_ ! MetricWriter.ProcessedMetric(metrics))
         active(0, Set.empty, List.empty, metricSpec, timers, context, duration)

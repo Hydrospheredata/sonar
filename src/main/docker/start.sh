@@ -29,9 +29,6 @@ APP_OPTS=""
 [[ -z "$SIDECAR_GRPC_PORT" ]] && SIDECAR_GRPC_PORT="9090"
 [[ -z "$SIDECAR_HTTP_PORT" ]] && SIDECAR_HTTP_PORT="9091"
 
-[[ -z "$SUBSAMPLING_TYPE" ]] && SUBSAMPLING_TYPE="reservoir"
-[[ -z "$SUBSAMPLING_SIZE" ]] && SUBSAMPLING_SIZE="1000"
-
 [[ -z "$PROFILE_TEXT_TAGGER_PATH" ]] && PROFILE_TEXT_TAGGER_PATH="/data/models/english-left3words-distsim.tagger"
 [[ -z "$PROFILE_TEXT_SHIFT_REDUCE_PARSER_PATH" ]] && PROFILE_TEXT_SHIFT_REDUCE_PARSER_PATH="/data/srparser/englishSR.beam.ser.gz"
 [[ -z "$PROFILE_TEXT_LEXPARSER_PATH" ]] && PROFILE_TEXT_LEXPARSER_PATH="/data/lexparser/englishPCFG.ser.gz"
@@ -51,7 +48,6 @@ then
     [[ ! -z "$MONGO_PASS" ]] && APP_OPTS="$APP_OPTS -Dmongo.pass=$MONGO_PASS"
     [[ ! -z "$MONGO_AUTH_DB" ]] && APP_OPTS="$APP_OPTS -Dmongo.auth-db=$MONGO_AUTH_DB"
     APP_OPTS="$APP_OPTS -Dsidecar.host=$SIDECAR_HOST -Dsidecar.grpc-port=$SIDECAR_GRPC_PORT -Dsidecar.http-port=$SIDECAR_HTTP_PORT"
-    APP_OPTS="$APP_OPTS -Dsubsampling.type=$SUBSAMPLING_TYPE -Dsubsampling.size=$SUBSAMPLING_SIZE"
     APP_OPTS="$APP_OPTS -Dprofile.text.tagger-path=$PROFILE_TEXT_TAGGER_PATH -Dprofile.text.shift-reduce-parser-path=$PROFILE_TEXT_SHIFT_REDUCE_PARSER_PATH -Dprofile.text.lex-parser-path=$PROFILE_TEXT_LEXPARSER_PATH -Dprofile.text.sentiment-path=$PROFILE_TEXT_SENTIMENT_PATH"
 
     echo "APP_OPTS=$APP_OPTS"

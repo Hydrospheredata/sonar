@@ -10,7 +10,4 @@ object Processor {
   
   trait ProfileMessage
   final case class ProfileRequest(payload: ExecutionInformation) extends ProfileMessage
-  
-  trait SubsamplingMessage
-  final case class SubsamplingRequest(payload: ExecutionInformation) extends  SubsamplingMessage
 }
