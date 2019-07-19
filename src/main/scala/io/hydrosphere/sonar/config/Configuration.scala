@@ -7,6 +7,5 @@ case class Configuration(
   http: HttpConfiguration,
   sidecar: SidecarConfiguration,
   influx: InfluxConfiguration,
-  subsampling: SubsamplingConfiguration,
   profile: ProfileConfiguration
 )
