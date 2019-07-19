@@ -102,7 +102,7 @@ class MetricStorageServiceInfluxInterpreter[F[_] : Async](config: Configuration)
   private val dateFormater = ISODateTimeFormat.dateTimeNoMillis()
 
 
-  private def toDate(epochSec:Long):String = dateFormater.print(epochSec * 1000L)
+  private def toDate(epochSec:Long):String = dateFormater.print(epochSec)
 
   sealed trait Bounds
   sealed case class Upper() extends Bounds

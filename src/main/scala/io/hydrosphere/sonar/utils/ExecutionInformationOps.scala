@@ -51,8 +51,8 @@ object ExecutionInformationOps extends Logging {
       } yield traceData.ts
       
       (maybeOriginTimestamp, maybeTimestamp) match {
-        case (Some(ts), _) => ts / 1000000
-        case (None, Some(ts)) => ts / 1000000
+        case (Some(ts), _) => ts
+        case (None, Some(ts)) => ts
         case (None, None) => System.currentTimeMillis()
       }
     }
