@@ -7,7 +7,7 @@ import io.hydrosphere.serving.manager.data_profile_types.DataProfileType
 import io.hydrosphere.serving.monitoring.api.ExecutionInformation
 import io.hydrosphere.sonar.actors.processors.profiles.{NumericalProfileProcessor, TextProfileProcessor}
 import io.hydrosphere.sonar.actors.writers.{MetricWriter, ProfileWriter}
-import io.hydrosphere.sonar.config.{Configuration, Reservoir}
+import io.hydrosphere.sonar.config.Configuration
 import io.hydrosphere.sonar.services._
 import io.hydrosphere.sonar.terms.{MetricSpec, Processable}
 
