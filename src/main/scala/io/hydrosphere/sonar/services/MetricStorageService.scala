@@ -99,7 +99,7 @@ class MetricStorageServiceInfluxInterpreter[F[_] : Async](config: Configuration)
     )
   }
 
-  private val dateFormater = ISODateTimeFormat.dateTimeNoMillis()
+  private val dateFormater = ISODateTimeFormat.dateTime()
 
 
   private def toDate(epochSec:Long):String = dateFormater.print(epochSec)
