@@ -9,7 +9,7 @@ object TensorProtoOps {
     def toDoubles: Seq[Double] = TypedTensorFactory.create(tensorProto) match {
       case DoubleTensor(_, data) => data
       case FloatTensor(_, data) => data.map(_.toDouble)
-      case integers @ (_: Uint64Tensor | _: Int64Tensor | _: Int32Tensor | _: Uint32Tensor | _: Uint8Tensor) =>
+      case integers @ (_: Uint64Tensor | _: Int64Tensor | _: Int32Tensor | _: Uint32Tensor | _: Uint8Tensor | _: Int8Tensor | _: Int16Tensor) =>
         integers.data.asInstanceOf[Seq[Long]].map(_.toDouble)
       case BoolTensor(_, data) => data.map(x => if (x) 1.0 else 0.0)
 
