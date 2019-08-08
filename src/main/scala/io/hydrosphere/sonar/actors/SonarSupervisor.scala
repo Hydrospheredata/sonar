@@ -78,7 +78,7 @@ class SonarSupervisor(context: ActorContext[SonarSupervisor.Message])(implicit c
           metricSpecService.getMetricSpecsByModelVersion(modelVersionId).unsafeRunAsync {
             case Right(metricSpecs) => 
               metricSpecs
-                .map(spec => getOrCreateMetricActor(processor(spec), spec.id))
+                .map(spec => getOrCreateMetricActor(processor(spec), s"${spec.id}-${spec.modelVersionId}"))
                 .foreach(_ ! Processor.MetricRequest(payload, metricWriter))
             case Left(exc) => context.log.error(exc, s"Error while getting MetricSpecs")
           }
