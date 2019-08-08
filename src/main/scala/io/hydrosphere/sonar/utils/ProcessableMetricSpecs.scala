@@ -44,4 +44,8 @@ object ProcessableMetricSpecs {
   implicit def processableAccuracy: Processable[AccuracyMetricSpec] = (t: AccuracyMetricSpec) => Behaviors.setup(context => {
     new AccuracyProcessor(context, t)
   })
+  
+  implicit def processableCustomModel(implicit predictionService: PredictionService[IO]): Processable[CustomModelMetricSpec] = (t: CustomModelMetricSpec) => Behaviors.setup(context => {
+    new CustomModelProcessor(context, t)
+  })
 }
