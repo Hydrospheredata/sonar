@@ -23,7 +23,6 @@ trait ProfileProcessor extends Logging {
       contract <- modelVersion.contract
       predict <- contract.predict
     } yield predict.outputs.map(i => (i.name, i.profile)).toMap.filter({ case (_, tpe) => tpe == dataType }).keys.toSet
-    logger.info(s"Adding outputs: $maybeDataTypes")
     maybeDataTypes.getOrElse(Set.empty[String])
   }
 
