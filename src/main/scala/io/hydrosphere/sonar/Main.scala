@@ -6,6 +6,8 @@ import akka.actor.typed.ActorSystem
 import cats.effect._
 import cats.effect.concurrent.Ref
 import cats.implicits._
+import com.mongodb.{ConnectionString, MongoCredential}
+import com.mongodb.MongoCredential.createCredential
 import com.twitter.finagle.Http
 import doobie._
 import io.grpc.Server
@@ -20,12 +22,39 @@ import io.hydrosphere.sonar.endpoints.{HttpService, MonitoringServiceGrpcApi}
 import io.hydrosphere.sonar.services._
 import org.flywaydb.core.Flyway
 import org.h2.jdbcx.JdbcConnectionPool
+import org.mongodb.scala.{MongoClient, MongoClientSettings}
 import org.slf4j.bridge.SLF4JBridgeHandler
 import pureconfig.generic.auto._
 
 import scala.concurrent.ExecutionContext
 
 object Dependencies {
+
+  def mongoClient[F[_]: Sync](config: Configuration): Resource[F, MongoClient] = {
+    def acquire = Sync[F].delay {
+      val builder = MongoClientSettings
+        .builder()
+        .applyToClusterSettings(b => b.applyConnectionString(new ConnectionString(s"mongodb://${config.mongo.host}:${config.mongo.port}/${config.mongo.database}?authSource=admin")))
+        .applyToConnectionPoolSettings(b => b.maxWaitQueueSize(1000).maxSize(200))
+      val credentials: Option[MongoCredential] = for {
+        user <- config.mongo.user
+        pass <- config.mongo.pass
+        authDb <- config.mongo.authDb
+      } yield createCredential(user, authDb, pass.toCharArray)
+
+      credentials match {
+        case Some(creds) => builder.credential(creds)
+        case None =>
+      }
+
+      val settings = builder.build()
+      MongoClient(settings)
+    }
+
+    def release = (client: MongoClient) => Sync[F].delay(client.close())
+
+    Resource.make(acquire)(release)
+  }
   
   def dbTransactor[F[_]: Async](config: Configuration)(implicit cs: ContextShift[F]): F[Transactor[F]] = config.db match {
     case H2(jdbcUrl, user, pass) => Async[F].delay(Transactor.fromDataSource[F](JdbcConnectionPool.create(jdbcUrl, user, pass), ExecutionContext.fromExecutor(Executors.newFixedThreadPool(32)), ExecutionContext.fromExecutor(Executors.newCachedThreadPool())))
@@ -51,7 +80,9 @@ object Dependencies {
   
   def profileStorageService[F[_]: Async](config: Configuration): F[ProfileStorageService[F]] = for {
     state <- Ref.of[F, ProfileStorageServiceMongoInterpreter.ObjectIdState](Map.empty)
-    instance <- Async[F].delay(new ProfileStorageServiceMongoInterpreter[F](config, state))
+    instance <- mongoClient(config).use { client =>
+      Async[F].delay(new ProfileStorageServiceMongoInterpreter[F](config, state, client))
+    } 
   } yield instance
   
   def batchProfileService(config: Configuration, profileStorageService: ProfileStorageService[IO]): IO[BatchProfileService[IO, fs2.Stream]] = {

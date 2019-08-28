@@ -70,39 +70,14 @@ object ProfileStorageServiceMongoInterpreter {
 
 import io.hydrosphere.sonar.services.ProfileStorageServiceMongoInterpreter._
 
-class ProfileStorageServiceMongoInterpreter[F[_]: Async](config: Configuration, state: Ref[F, ObjectIdState]) extends ProfileStorageService[F] with Logging {
+class ProfileStorageServiceMongoInterpreter[F[_]: Async](config: Configuration, state: Ref[F, ObjectIdState], mongoClient: MongoClient) extends ProfileStorageService[F] with Logging {
   
   val codecRegistry: CodecRegistry = fromRegistries(
     fromCodecs(new BigDecimalScalaCodec),
     DEFAULT_CODEC_REGISTRY
   )
   
-  val mongoClient: Resource[F, MongoClient] = {
-    def acquire = Sync[F].delay {
-      val builder = MongoClientSettings
-        .builder()
-        .applyToClusterSettings(b => b.applyConnectionString(new ConnectionString(s"mongodb://${config.mongo.host}:${config.mongo.port}/${config.mongo.database}?authSource=admin")))
-        .applyToConnectionPoolSettings(b => b.maxWaitQueueSize(1000).maxSize(200))
-      val credentials: Option[MongoCredential] = for {
-        user <- config.mongo.user
-        pass <- config.mongo.pass
-        authDb <- config.mongo.authDb
-      } yield createCredential(user, authDb, pass.toCharArray)
-
-      credentials match {
-        case Some(creds) => builder.credential(creds)
-        case None =>
-      }
-
-      val settings = builder.build()
-      MongoClient(settings)
-    }
-    def release = (client: MongoClient) => Sync[F].delay(client.close())
-    
-    Resource.make(acquire)(release)
-  }
-  
-  def database(client: MongoClient): MongoDatabase = client.getDatabase(config.mongo.database)
+  lazy val database: MongoDatabase = mongoClient.getDatabase(config.mongo.database)
   
   def collection(profileSourceKind: ProfileSourceKind, database: MongoDatabase): MongoCollection[Document] =
     database.getCollection(s"${profileSourceKind.entryName}__preprocessed_profiles")
@@ -190,8 +165,8 @@ class ProfileStorageServiceMongoInterpreter[F[_]: Async](config: Configuration, 
     )
   }
   
-  def getProfile(modelVersionId: Long, fieldName: String, sourceKind: ProfileSourceKind): F[Option[Profile]] = mongoClient.use { client =>
-    collection(sourceKind, database(client))
+  def getProfile(modelVersionId: Long, fieldName: String, sourceKind: ProfileSourceKind): F[Option[Profile]] =
+    collection(sourceKind, database)
       .find(and(equal("modelVersionId", modelVersionId), equal("name", fieldName)))
       .first()
       .toFuture()
@@ -241,23 +216,20 @@ class ProfileStorageServiceMongoInterpreter[F[_]: Async](config: Configuration, 
           }}
         }
       })
-  }
   
-  def saveDocument(document: Document, objectId: BsonObjectId, profileSourceKind: ProfileSourceKind): F[Unit] = mongoClient.use { client =>
-    collection(profileSourceKind, database(client)).updateOne(
+  def saveDocument(document: Document, objectId: BsonObjectId, profileSourceKind: ProfileSourceKind): F[Unit] =
+    collection(profileSourceKind, database).updateOne(
       filter = Document("_id" -> objectId),
       update = document,
       options = (new UpdateOptions).upsert(true)
     ).toFuture().liftToAsync[F].map(_ => Unit)
-  }
   
-  def batchSaveDocuments(documents: Seq[model.UpdateOneModel[Nothing]], profileSourceKind: ProfileSourceKind): F[Unit] = mongoClient.use { client =>
-    collection(profileSourceKind, database(client))
+  def batchSaveDocuments(documents: Seq[model.UpdateOneModel[Nothing]], profileSourceKind: ProfileSourceKind): F[Unit] =
+    collection(profileSourceKind, database)
       .bulkWrite(documents)
       .toFuture()
       .liftToAsync[F]
       .map(_ => Unit)
-  }
   
   override def saveProfile(profile: PreprocessedProfile, profileSourceKind: ProfileSourceKind): F[Unit] = profile match {
     case p: NumericalPreprocessedProfile => for {
@@ -295,8 +267,7 @@ class ProfileStorageServiceMongoInterpreter[F[_]: Async](config: Configuration, 
     } yield Unit
   }
 
-  override def getPreprocessedDistinctNames(modelVersionId: Long, sourceKind: ProfileSourceKind): F[Seq[String]] = mongoClient.use { client =>
-    collection(sourceKind, database(client))
+  override def getPreprocessedDistinctNames(modelVersionId: Long, sourceKind: ProfileSourceKind): F[Seq[String]] =
+    collection(sourceKind, database)
       .distinct[String]("name", equal("modelVersionId", modelVersionId)).toFuture().liftToAsync[F]
-  }
 }
