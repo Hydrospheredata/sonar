@@ -24,7 +24,7 @@ object SonarSupervisor {
           .entrySet()
           .stream()
           .filter(_.getValue.equals(value))
-          .map(_.getKey)
+          .map[A](_.getKey)
           .findFirst()
           .get() 
       }.toOption

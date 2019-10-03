@@ -9,6 +9,7 @@ import io.hydrosphere.serving.tensorflow.api.prediction_service.PredictionServic
 import io.hydrosphere.serving.tensorflow.tensor.TensorProto
 import io.hydrosphere.sonar.config.Configuration
 import io.hydrosphere.sonar.utils.FutureOps
+import io.netty.handler.ssl.util.InsecureTrustManagerFactory
 
 import scala.concurrent.duration._
 

@@ -24,6 +24,7 @@ trait MetricSpecService[F[_]] {
   def createMetricSpec(metricSpec: MetricSpec): F[MetricSpec]
   def getMetricSpecById(id: String): F[MetricSpec]
   def getMetricSpecsByModelVersion(modelVersionId: Long): F[List[MetricSpec]]
+  def getCustomMetricSpecByModelVersion(modelVersionId: Long): F[List[MetricSpec]]
   def getAllMetricSpecs: F[List[MetricSpec]]
   def remove(id: String): F[Unit]
 }
@@ -113,6 +114,23 @@ class MetricSpecServiceInterpreter[F[_] : Sync](transactor: Transactor[F]) exten
       .compile
       .toList
       .map(_ ++ defaultMetricSpec(modelVersionId))
+      .transact(transactor)
+  }
+  
+  override def getCustomMetricSpecByModelVersion(modelVersionId: Long): F[List[MetricSpec]] = {
+    val sql =
+      sql"""
+           SELECT kind, name, modelVersionId, config, withHealth, id
+           FROM metric_specs
+           WHERE modelVersionId = $modelVersionId AND kind = 'CustomModelMetricSpec'
+         """
+    println(sql, modelVersionId)
+    sql
+      .query[MetricSpecFields]
+      .stream
+      .map(toMetricSpec)
+      .compile
+      .toList
       .transact(transactor)
   }
 

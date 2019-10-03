@@ -2,10 +2,8 @@ package io.hydrosphere.sonar.services
 
 import cats.Monad
 import cats.effect.concurrent.Ref
-import cats.effect.{Async, Resource, Sync}
+import cats.effect.{Async, Sync}
 import cats.implicits._
-import com.mongodb.MongoCredential.createCredential
-import com.mongodb.{ConnectionString, MongoCredential}
 import io.hydrosphere.sonar.Logging
 import io.hydrosphere.sonar.config.Configuration
 import io.hydrosphere.sonar.terms._
@@ -20,7 +18,7 @@ import org.mongodb.scala.bson.codecs.DEFAULT_CODEC_REGISTRY
 import org.mongodb.scala.bson.{BsonObjectId, Decimal128}
 import org.mongodb.scala.model.Filters._
 import org.mongodb.scala.model.UpdateOptions
-import org.mongodb.scala.{Document, MongoClient, MongoClientSettings, MongoCollection, MongoDatabase, model}
+import org.mongodb.scala.{Document, MongoClient, MongoCollection, MongoDatabase, model}
 
 import scala.collection.JavaConverters._
 import scala.math.BigDecimal.RoundingMode
@@ -31,6 +29,7 @@ trait ProfileStorageService[F[_]] {
   def batchSaveProfiles(profiles: Seq[PreprocessedProfile], profileSourceKind: ProfileSourceKind): F[Unit]
 
   def getProfile(modelVersionId: Long, fieldName: String, sourceKind: ProfileSourceKind): F[Option[Profile]]
+  def getProfiles(modelVersionId: Long, sourceKind: ProfileSourceKind): F[Seq[Profile]]
 
   def getPreprocessedDistinctNames(modelVersionId: Long, sourceKind: ProfileSourceKind): F[Seq[String]]
 }
@@ -49,6 +48,9 @@ class ProfileStorageServiceDummyInterpreter[F[_]: Sync] extends ProfileStorageSe
 
   override def batchSaveProfiles(profiles: Seq[PreprocessedProfile], profileSourceKind: ProfileSourceKind): F[Unit] =
     Sync[F].unit
+
+  override def getProfiles(modelVersionId: Long, sourceKind: ProfileSourceKind): F[Seq[Profile]] =
+    Sync[F].pure(Seq.empty)
 }
 
 object ProfileStorageServiceMongoInterpreter {
@@ -165,57 +167,65 @@ class ProfileStorageServiceMongoInterpreter[F[_]: Async](config: Configuration, 
     )
   }
   
+  private def docToProfile(document: Document): Option[Profile] = Option(document).flatMap { doc =>
+    doc.get("kind").map(_.asString().getValue).flatMap { x: String =>
+      x match {
+        case "numerical" => for {
+          modelVersionId <- doc.get("modelVersionId").map(_.asInt64().longValue())
+          name <- doc.get("name").map(_.asString().getValue)
+          sum <- doc.get("sum").map(_.asDecimal128().decimal128Value().bigDecimalValue())
+          size <- doc.get("size").map(_.asInt64().longValue())
+          squaresSum <- doc.get("squaresSum").map(_.asDecimal128().decimal128Value().bigDecimalValue())
+          fourthPowersSum <- doc.get("fourthPowersSum").map(_.asDecimal128().decimal128Value().bigDecimalValue())
+          missing <- doc.get("missing").map(_.asInt64().longValue())
+          min <- doc.get("min").map(_.asDouble().doubleValue())
+          max <- doc.get("max").map(_.asDouble().doubleValue())
+          histogramBins <- doc.get("histogramBins").map(_.asDocument().entrySet().asScala.map(e => e.getKey.replace("_", ".").toDouble -> e.getValue.asInt64().longValue()).toMap)
+          hyperLogLog <- doc.get("hyperLogLog").map(d => Document(d.asDocument().toJson)).flatMap(hll => for {
+            size <- hll.get("size").map(_.asInt32().intValue())
+            buckets <- hll.get("buckets").map(_.asDocument().entrySet().asScala.map(e => e.getKey.toInt -> e.getValue.asInt32().intValue()).toMap)
+          } yield HyperLogLog(size, buckets))
+          countMinSketch <- doc.get("countMinSketch").map(d => Document(d.asDocument().toJson)).flatMap(cms => for {
+            size <- cms.get("size").map(_.asInt32().intValue())
+            buckets <- cms.get("buckets").map(_.asDocument().entrySet().asScala.map(e => e.getKey.toInt -> e.getValue.asInt64().longValue()).toMap)
+          } yield CountMinSketch(size, buckets))
+        } yield NumericalProfile(NumericalPreprocessedProfile(modelVersionId, name, sum, size, squaresSum, fourthPowersSum, missing, min, max, histogramBins, hyperLogLog, countMinSketch))
+        case "text" => for {
+          modelVersionId <- doc.get("modelVersionId").map(_.asInt64().longValue())
+          name <- doc.get("name").map(_.asString().getValue)
+          size <- doc.get("size").map(_.asInt64().longValue())
+          missing <- doc.get("missing").map(_.asInt64().longValue())
+          sentimentSum <- doc.get("sentimentSum").map(_.asInt64().longValue())
+          lengthSum <- doc.get("lengthSum").map(_.asInt64().longValue())
+          tokenLengthSum <- doc.get("tokenLengthSum").map(_.asInt64().longValue())
+          treeDepthSum <- doc.get("treeDepthSum").map(_.asInt64().longValue())
+          uniqueLemmaSum <- doc.get("uniqueLemmasSum").map(_.asDouble().doubleValue())
+          //              languagesSum    <- doc.get("languagesSum").map(d => d.asDocument().entrySet().asScala.map(e => e.getKey -> e.getValue.asInt64().longValue()).toMap)
+          posTagSum <- doc.get("posTagSum").map(d => d.asDocument().entrySet().asScala.map(e => e.getKey -> e.getValue.asInt64().longValue()).toMap)
+          hyperLogLog <- doc.get("tokenHyperLogLog").map(d => Document(d.asDocument().toJson)).flatMap(hll => for {
+            size <- hll.get("size").map(_.asInt32().intValue())
+            buckets <- hll.get("buckets").map(_.asDocument().entrySet().asScala.map(e => e.getKey.toInt -> e.getValue.asInt32().intValue()).toMap)
+          } yield HyperLogLog(size, buckets))
+        } yield TextProfile(TextPreprocessedProfile(modelVersionId, name, size, missing, sentimentSum, lengthSum, tokenLengthSum, treeDepthSum, uniqueLemmaSum, Map.empty[String, Long], posTagSum, hyperLogLog))
+      }
+    }
+  }
+  
   def getProfile(modelVersionId: Long, fieldName: String, sourceKind: ProfileSourceKind): F[Option[Profile]] =
     collection(sourceKind, database)
       .find(and(equal("modelVersionId", modelVersionId), equal("name", fieldName)))
       .first()
       .toFuture()
       .liftToAsync[F]
-      .map(doc => {
-        if (doc == null) {
-          None
-        } else {
-          doc.get("kind").map(_.asString().getValue).flatMap { x: String => x match {
-            case "numerical" => for {
-              modelVersionId  <- doc.get("modelVersionId").map(_.asInt64().longValue())
-              name            <- doc.get("name").map(_.asString().getValue)
-              sum             <- doc.get("sum").map(_.asDecimal128().decimal128Value().bigDecimalValue())
-              size            <- doc.get("size").map(_.asInt64().longValue())
-              squaresSum      <- doc.get("squaresSum").map(_.asDecimal128().decimal128Value().bigDecimalValue())
-              fourthPowersSum <- doc.get("fourthPowersSum").map(_.asDecimal128().decimal128Value().bigDecimalValue())
-              missing         <- doc.get("missing").map(_.asInt64().longValue())
-              min             <- doc.get("min").map(_.asDouble().doubleValue())
-              max             <- doc.get("max").map(_.asDouble().doubleValue())
-              histogramBins   <- doc.get("histogramBins").map(_.asDocument().entrySet().asScala.map(e => e.getKey.replace("_", ".").toDouble -> e.getValue.asInt64().longValue()).toMap)
-              hyperLogLog     <- doc.get("hyperLogLog").map(d => Document(d.asDocument().toJson)).flatMap(hll => for {
-                size <- hll.get("size").map(_.asInt32().intValue())
-                buckets <- hll.get("buckets").map(_.asDocument().entrySet().asScala.map(e => e.getKey.toInt -> e.getValue.asInt32().intValue()).toMap)
-              } yield HyperLogLog(size, buckets))
-              countMinSketch <- doc.get("countMinSketch").map(d => Document(d.asDocument().toJson)).flatMap(cms => for {
-                size <- cms.get("size").map(_.asInt32().intValue())
-                buckets <- cms.get("buckets").map(_.asDocument().entrySet().asScala.map(e => e.getKey.toInt -> e.getValue.asInt64().longValue()).toMap)
-              } yield CountMinSketch(size, buckets))
-            } yield NumericalProfile(NumericalPreprocessedProfile(modelVersionId, name, sum, size, squaresSum, fourthPowersSum, missing, min, max, histogramBins, hyperLogLog, countMinSketch))
-            case "text" => for {
-              modelVersionId  <- doc.get("modelVersionId").map(_.asInt64().longValue())
-              name            <- doc.get("name").map(_.asString().getValue)
-              size            <- doc.get("size").map(_.asInt64().longValue())
-              missing         <- doc.get("missing").map(_.asInt64().longValue())
-              sentimentSum    <- doc.get("sentimentSum").map(_.asInt64().longValue())
-              lengthSum       <- doc.get("lengthSum").map(_.asInt64().longValue())
-              tokenLengthSum  <- doc.get("tokenLengthSum").map(_.asInt64().longValue())
-              treeDepthSum    <- doc.get("treeDepthSum").map(_.asInt64().longValue())
-              uniqueLemmaSum  <- doc.get("uniqueLemmasSum").map(_.asDouble().doubleValue())
-//              languagesSum    <- doc.get("languagesSum").map(d => d.asDocument().entrySet().asScala.map(e => e.getKey -> e.getValue.asInt64().longValue()).toMap)
-              posTagSum       <- doc.get("posTagSum").map(d => d.asDocument().entrySet().asScala.map(e => e.getKey -> e.getValue.asInt64().longValue()).toMap)
-              hyperLogLog     <- doc.get("tokenHyperLogLog").map(d => Document(d.asDocument().toJson)).flatMap(hll => for {
-                size <- hll.get("size").map(_.asInt32().intValue())
-                buckets <- hll.get("buckets").map(_.asDocument().entrySet().asScala.map(e => e.getKey.toInt -> e.getValue.asInt32().intValue()).toMap)
-              } yield HyperLogLog(size, buckets))
-            } yield TextProfile(TextPreprocessedProfile(modelVersionId, name, size, missing, sentimentSum, lengthSum, tokenLengthSum, treeDepthSum, uniqueLemmaSum, Map.empty[String, Long], posTagSum, hyperLogLog))
-          }}
-        }
-      })
+      .map(docToProfile)
+
+  override def getProfiles(modelVersionId: Long, sourceKind: ProfileSourceKind): F[Seq[Profile]] = {
+    collection(sourceKind, database)
+      .find(equal("modelVersionId", modelVersionId))
+      .toFuture()
+      .liftToAsync[F]
+      .map(_.map(docToProfile).filter(_.isDefined).map(_.get))
+  }
   
   def saveDocument(document: Document, objectId: BsonObjectId, profileSourceKind: ProfileSourceKind): F[Unit] =
     collection(profileSourceKind, database).updateOne(

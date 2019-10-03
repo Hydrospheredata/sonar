@@ -51,7 +51,7 @@ class CustomModelProcessor(context: ActorContext[Processor.MetricMessage], metri
               saveTo ! MetricWriter.ProcessedMetric(Seq(metric))
             case Left(exc) => context.log.error(exc, s"Error while requesting Custom Model (${metricSpec.config.applicationName}) prediction for modelVersion ${metricSpec.modelVersionId}")
           }
-        case None => context.log.warning("Custom Model Metric Processor: request or response is empty")
+        case None => context.log.warning("Custom Model Metric Processor: executionInformation or response is empty")
       }
       this
   }

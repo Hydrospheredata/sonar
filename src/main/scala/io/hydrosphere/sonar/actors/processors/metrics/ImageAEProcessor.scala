@@ -41,7 +41,7 @@ class ImageAEProcessor(context: ActorContext[Processor.MetricMessage], metricSpe
               saveTo ! MetricWriter.ProcessedMetric(Seq(metric))
             case Left(exc) => context.log.error(exc, s"Error while requesting Image AE (${metricSpec.config.applicationName}) prediction for modelVersion ${metricSpec.modelVersionId}")
           }
-        case None => context.log.warning("ImageAutoencoder: request or response is empty")
+        case None => context.log.warning("ImageAutoencoder: executionInformation or response is empty")
       }
       this
   }
