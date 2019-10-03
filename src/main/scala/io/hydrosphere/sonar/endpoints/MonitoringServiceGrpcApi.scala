@@ -23,61 +23,59 @@ class MonitoringServiceGrpcApi(recipient: ActorRef[SonarSupervisor.Message], pro
       logger.info("Got executionInformation from GRPC")
       recipient ! SonarSupervisor.Request(executionInformation)
       // TODO: remove
-      if (executionInformation.metadata.map(_.modelVersionId).getOrElse(0) == 2) {
-        val maybeRequest = for {
-          request <- executionInformation.request
-          inputs = request.inputs
-          response <- executionInformation.responseOrError.response
-          outputs = response.outputs
-        } yield inputs ++ outputs
-        logger.info(s"got ${maybeRequest.getOrElse(Map.empty).keys.mkString(",")}")
-        val effect = executionInformation.metadata match {
-          case Some(md) =>
-            for {
-              modelVersion <- modelDataService.getModelVersion(md.modelVersionId)
-              _ = logger.info("got modelVersion")
-              profiles <- profileStorageService.getProfiles(md.modelVersionId, ProfileSourceKind.Training)
-              _ = logger.info("got profiles")
-              profileChecks = ProfileChecks.check(profiles, executionInformation)
-              _ = logger.info("computed checks")
-              // TODO: get all metrics
-              metricSpecs <- metricSpecService.getCustomMetricSpecByModelVersion(md.modelVersionId)
-              _ = logger.info(s"got metricspecs: ${metricSpecs}")
-              // TODO: move to separated class
-              metricChecks <- maybeRequest match {
-                case Some(req) => metricSpecs.collect {
-                  case CustomModelMetricSpec(name, modelVersionId, config, withHealth, id) =>
-                    logger.info("We are in CustomModelMetricSpec")
-                    predictionService
-                      .callApplication(config.applicationName, req)
-                      .flatMap { predictResponse =>
-                        val value = predictResponse.outputs.get("value").flatMap(_.doubleVal.headOption).getOrElse(0d)
-                        config.thresholdCmpOperator match {
-                          case Some(cmpOperator) => IO.pure[Check](cmpOperator match {
-                            case Eq => Check(value == config.threshold.getOrElse(Double.MaxValue), name, value, config.threshold.getOrElse(Double.MaxValue), Some(id))
-                            case NotEq => Check(value != config.threshold.getOrElse(Double.MaxValue), name, value, config.threshold.getOrElse(Double.MaxValue), Some(id))
-                            case Greater => Check(value > config.threshold.getOrElse(Double.MaxValue), name, value, config.threshold.getOrElse(Double.MaxValue), Some(id))
-                            case Less => Check(value < config.threshold.getOrElse(Double.MinValue), name, value, config.threshold.getOrElse(Double.MinValue), Some(id))
-                            case GreaterEq => Check(value >= config.threshold.getOrElse(Double.MaxValue), name, value, config.threshold.getOrElse(Double.MaxValue), Some(id))
-                            case LessEq => Check(value <= config.threshold.getOrElse(Double.MinValue), name, value, config.threshold.getOrElse(Double.MinValue), Some(id))
-                          })
-                          case None => IO.raiseError[Check](new RuntimeException("cmpOperator is empty"))
-                        }
+      val maybeRequest = for {
+        request <- executionInformation.request
+        inputs = request.inputs
+        response <- executionInformation.responseOrError.response
+        outputs = response.outputs
+      } yield inputs ++ outputs
+      logger.info(s"got ${maybeRequest.getOrElse(Map.empty).keys.mkString(",")}")
+      val effect = executionInformation.metadata match {
+        case Some(md) =>
+          for {
+            modelVersion <- modelDataService.getModelVersion(md.modelVersionId)
+            _ = logger.info("got modelVersion")
+            profiles <- profileStorageService.getProfiles(md.modelVersionId, ProfileSourceKind.Training)
+            _ = logger.info("got profiles")
+            profileChecks = ProfileChecks.check(profiles, executionInformation)
+            _ = logger.info("computed checks")
+            // TODO: get all metrics
+            metricSpecs <- metricSpecService.getCustomMetricSpecByModelVersion(md.modelVersionId)
+            _ = logger.info(s"got metricspecs: ${metricSpecs}")
+            // TODO: move to separated class
+            metricChecks <- maybeRequest match {
+              case Some(req) => metricSpecs.collect {
+                case CustomModelMetricSpec(name, modelVersionId, config, withHealth, id) =>
+                  logger.info("We are in CustomModelMetricSpec")
+                  predictionService
+                    .callApplication(config.applicationName, req)
+                    .flatMap { predictResponse =>
+                      val value = predictResponse.outputs.get("value").flatMap(_.doubleVal.headOption).getOrElse(0d)
+                      config.thresholdCmpOperator match {
+                        case Some(cmpOperator) => IO.pure[Check](cmpOperator match {
+                          case Eq => Check(value == config.threshold.getOrElse(Double.MaxValue), name, value, config.threshold.getOrElse(Double.MaxValue), Some(id))
+                          case NotEq => Check(value != config.threshold.getOrElse(Double.MaxValue), name, value, config.threshold.getOrElse(Double.MaxValue), Some(id))
+                          case Greater => Check(value > config.threshold.getOrElse(Double.MaxValue), name, value, config.threshold.getOrElse(Double.MaxValue), Some(id))
+                          case Less => Check(value < config.threshold.getOrElse(Double.MinValue), name, value, config.threshold.getOrElse(Double.MinValue), Some(id))
+                          case GreaterEq => Check(value >= config.threshold.getOrElse(Double.MaxValue), name, value, config.threshold.getOrElse(Double.MaxValue), Some(id))
+                          case LessEq => Check(value <= config.threshold.getOrElse(Double.MinValue), name, value, config.threshold.getOrElse(Double.MinValue), Some(id))
+                        })
+                        case None => IO.raiseError[Check](new RuntimeException("cmpOperator is empty"))
                       }
-                      .attempt
-                }
-                  // TODO: process errors
-                  .sequence.map(_.filter(_.isRight).map(_.right.get))
-                case None => IO.pure(Seq.empty)
+                    }
+                    .attempt
               }
-              _ <- checkStorageService.saveCheckedRequest(executionInformation, modelVersion, profileChecks + ("overall" -> metricChecks))
-            } yield Unit
-          case None => IO.unit // TODO: do something 
-        }
-        effect.unsafeRunAsync {
-          case Left(value) => logger.error("error while saving checks", value)
-          case Right(value) => logger.info("checks are done")
-        }
+                // TODO: process errors
+                .sequence.map(_.filter(_.isRight).map(_.right.get))
+              case None => IO.pure(Seq.empty)
+            }
+            _ <- checkStorageService.saveCheckedRequest(executionInformation, modelVersion, profileChecks + ("overall" -> metricChecks))
+          } yield Unit
+        case None => IO.unit // TODO: do something 
+      }
+      effect.unsafeRunAsync {
+        case Left(value) => logger.error("error while saving checks", value)
+        case Right(value) => logger.info("checks are done")
       }
       Empty()
     }
