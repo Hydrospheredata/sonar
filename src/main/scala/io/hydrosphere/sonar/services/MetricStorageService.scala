@@ -174,7 +174,7 @@ class MetricStorageServiceInfluxInterpreter[F[_] : Async](config: Configuration)
     val query =
       s"""SELECT "value", "health", "modelVersionId"::tag, "columnIndex"::tag, "traces"::tag, "trace"::tag, "metricSpecId"::tag
          |FROM ${metrics.mkString(",")}
-         |WHERE "modelVersionId" = '$modelVersionId' AND "modelSpecId" = '$metricSpecId'
+         |WHERE "modelVersionId" = '$modelVersionId' AND "metricSpecId" = '$metricSpecId'
          |AND time >= '${toDate(from)}' AND time <= '${toDate(till)}' $columnIndexClause $healthClause""".stripMargin
 
     database.use { db =>
