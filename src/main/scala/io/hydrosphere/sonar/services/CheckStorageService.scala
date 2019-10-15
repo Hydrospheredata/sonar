@@ -1,25 +1,27 @@
 package io.hydrosphere.sonar.services
 
-import cats.effect.{Async, Sync}
 import cats.effect.concurrent.Ref
+import cats.effect.{Async, Sync}
 import cats.implicits._
+import com.google.protobuf.ByteString
 import io.hydrosphere.serving.manager.grpc.entities.ModelVersion
 import io.hydrosphere.serving.monitoring.api.ExecutionInformation
+import io.hydrosphere.serving.tensorflow.tensor.TensorProto
 import io.hydrosphere.serving.tensorflow.types.DataType
 import io.hydrosphere.sonar.Logging
 import io.hydrosphere.sonar.config.Configuration
 import io.hydrosphere.sonar.terms.Check
-import io.hydrosphere.sonar.utils.ModelFieldOps._
-import io.hydrosphere.sonar.utils.ExecutionInformationOps._
 import io.hydrosphere.sonar.utils.BooleanOps._
+import io.hydrosphere.sonar.utils.ExecutionInformationOps._
 import io.hydrosphere.sonar.utils.FutureOps._
-import org.bson.codecs.ObjectIdGenerator
-import org.bson.json.{Converter, JsonWriterSettings, StrictJsonWriter}
+import io.hydrosphere.sonar.utils.ModelFieldOps._
+import io.hydrosphere.sonar.utils.TensorProtoOps._
+import org.bson.json.{JsonWriterSettings, StrictJsonWriter}
 import org.bson.types.ObjectId
 import org.mongodb.scala.bson.{BsonArray, BsonBoolean, BsonDocument, BsonNull, BsonNumber, BsonObjectId, BsonString, BsonValue}
-import org.mongodb.scala.{Document, MongoClient, MongoCollection, MongoDatabase}
 import org.mongodb.scala.model.Filters._
 import org.mongodb.scala.model.UpdateOptions
+import org.mongodb.scala.{Document, MongoClient, MongoCollection, MongoDatabase}
 
 object CheckStorageService {
   type CheckedRequest = (ExecutionInformation, Map[String, Seq[Check]])
@@ -89,8 +91,55 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
   }
 
   override def saveCheckedRequest(ei: ExecutionInformation, modelVersion: ModelVersion, checks: Map[String, Seq[Check]]): F[Unit] = {
-    logger.info(s"saveCheckedRequest with ${checks.size} checks")
+    logger.info(s"${modelVersion.id} saveCheckedRequest with ${checks.size} checks")
     case class ByFieldChecks(checks: Seq[(String, BsonValue)], aggregates: Seq[(String, BsonValue)])
+    
+    def tensorDataToBson(tensorProto: TensorProto): BsonValue = {
+      val isScalar = tensorProto.tensorShape.exists(_.isScalar)
+      def getter[A](data: Seq[A], bsonValue: A => BsonValue): BsonValue = {
+        if (isScalar) {
+          data.headOption.map(bsonValue).getOrElse(BsonNull())
+        } else {
+          BsonArray(data.map(bsonValue))
+        }
+      }
+      tensorProto.dtype match {
+        case DataType.DT_FLOAT => getter[Float](tensorProto.floatVal, v => BsonNumber(v.toDouble))
+        case DataType.DT_DOUBLE => getter[Double](tensorProto.doubleVal, BsonNumber.apply)
+        case DataType.DT_INT32 => getter(tensorProto.intVal, BsonNumber.apply) 
+        case DataType.DT_UINT8 => getter(tensorProto.intVal, BsonNumber.apply)
+        case DataType.DT_INT16 => getter(tensorProto.intVal, BsonNumber.apply)
+        case DataType.DT_INT8 => getter(tensorProto.intVal, BsonNumber.apply)
+        case DataType.DT_STRING => getter[ByteString](tensorProto.stringVal, v => BsonString(v.toStringUtf8))
+        case DataType.DT_COMPLEX64 =>   getter[Float](tensorProto.scomplexVal, v => BsonNumber(v.toDouble))
+        case DataType.DT_INT64 => getter[Long](tensorProto.int64Val, BsonNumber.apply)
+        case DataType.DT_BOOL => getter(tensorProto.boolVal, BsonBoolean.apply)
+        case DataType.DT_QINT8 => getter(tensorProto.intVal, BsonNumber.apply)
+        case DataType.DT_QUINT8 => getter(tensorProto.intVal, BsonNumber.apply)
+        case DataType.DT_QINT32 => getter(tensorProto.intVal, BsonNumber.apply)
+        case DataType.DT_BFLOAT16 => getter(tensorProto.halfVal, BsonNumber.apply)
+        case DataType.DT_QINT16 => getter(tensorProto.intVal, BsonNumber.apply)
+        case DataType.DT_QUINT16 => getter(tensorProto.intVal, BsonNumber.apply)
+        case DataType.DT_UINT16 => getter(tensorProto.intVal, BsonNumber.apply)
+        case DataType.DT_COMPLEX128 => getter[Double](tensorProto.dcomplexVal, BsonNumber.apply)
+        case DataType.DT_HALF => getter(tensorProto.halfVal, BsonNumber.apply)
+        case DataType.DT_UINT32 => getter(tensorProto.uint32Val, BsonNumber.apply)
+        case DataType.DT_UINT64 => getter[Long](tensorProto.uint64Val, BsonNumber.apply)
+        case DataType.DT_MAP =>
+          logger.warn(s"Cannot serialize DT_MAP")
+          BsonNull() // TODO: serialize DT_MAP type
+        case DataType.DT_RESOURCE =>
+          logger.warn(s"Cannot serialize DT_RESOURCE")
+          BsonNull() // TODO: serialize DT_RESOURCE type
+        case DataType.DT_VARIANT =>
+          logger.warn(s"Cannot serialize DT_VARIANT")
+          BsonNull() // TODO: serialize DT_VARIANT type
+        case DataType.DT_INVALID =>
+          logger.warn(s"DataType is DT_INVALID")
+          BsonNull()
+        case DataType.Unrecognized(value) => BsonNull()
+      }
+    }
     
     val maybeBsonChecks = for {
       contract <- modelVersion.contract
@@ -102,63 +151,7 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
     } yield fields.map { modelField =>
       val bsonValue = modelField.eitherSubfieldOrDataType match {
         case Left(_) => BsonNull() // TODO: process subfields
-        case Right(dataType) => dataType match { // TODO: refactor
-          case DataType.DT_FLOAT =>
-            data.get(modelField.name).map(tensorProto => BsonArray(tensorProto.floatVal.map(value => BsonNumber(value)))).getOrElse(BsonNull())
-          case DataType.DT_DOUBLE =>
-            data.get(modelField.name).map(tensorProto => BsonArray(tensorProto.doubleVal.map(value => BsonNumber(value)))).getOrElse(BsonNull())
-          case DataType.DT_INT32 =>
-            data.get(modelField.name).map(tensorProto => BsonArray(tensorProto.intVal.map(value => BsonNumber(value)))).getOrElse(BsonNull())
-          case DataType.DT_UINT8 =>
-            data.get(modelField.name).map(tensorProto => BsonArray(tensorProto.intVal.map(value => BsonNumber(value)))).getOrElse(BsonNull())
-          case DataType.DT_INT16 =>
-            data.get(modelField.name).map(tensorProto => BsonArray(tensorProto.intVal.map(value => BsonNumber(value)))).getOrElse(BsonNull())
-          case DataType.DT_INT8 =>
-            data.get(modelField.name).map(tensorProto => BsonArray(tensorProto.intVal.map(value => BsonNumber(value)))).getOrElse(BsonNull())
-          case DataType.DT_STRING =>
-            data.get(modelField.name).map(tensorProto => BsonArray(tensorProto.stringVal.map(value => BsonString(value.toStringUtf8)))).getOrElse(BsonNull())
-          case DataType.DT_COMPLEX64 =>
-            data.get(modelField.name).map(tensorProto => BsonArray(tensorProto.scomplexVal.map(value => BsonNumber(value)))).getOrElse(BsonNull())
-          case DataType.DT_INT64 =>
-            data.get(modelField.name).map(tensorProto => BsonArray(tensorProto.int64Val.map(value => BsonNumber(value)))).getOrElse(BsonNull())
-          case DataType.DT_BOOL =>
-            data.get(modelField.name).map(tensorProto => BsonArray(tensorProto.boolVal.map(value => BsonBoolean(value)))).getOrElse(BsonNull())
-          case DataType.DT_QINT8 =>
-            data.get(modelField.name).map(tensorProto => BsonArray(tensorProto.intVal.map(value => BsonNumber(value)))).getOrElse(BsonNull())
-          case DataType.DT_QUINT8 =>
-            data.get(modelField.name).map(tensorProto => BsonArray(tensorProto.intVal.map(value => BsonNumber(value)))).getOrElse(BsonNull())
-          case DataType.DT_QINT32 =>
-            data.get(modelField.name).map(tensorProto => BsonArray(tensorProto.intVal.map(value => BsonNumber(value)))).getOrElse(BsonNull())
-          case DataType.DT_BFLOAT16 =>
-            data.get(modelField.name).map(tensorProto => BsonArray(tensorProto.halfVal.map(value => BsonNumber(value)))).getOrElse(BsonNull())
-          case DataType.DT_QINT16 =>
-            data.get(modelField.name).map(tensorProto => BsonArray(tensorProto.intVal.map(value => BsonNumber(value)))).getOrElse(BsonNull())
-          case DataType.DT_QUINT16 =>
-            data.get(modelField.name).map(tensorProto => BsonArray(tensorProto.intVal.map(value => BsonNumber(value)))).getOrElse(BsonNull())
-          case DataType.DT_UINT16 =>
-            data.get(modelField.name).map(tensorProto => BsonArray(tensorProto.intVal.map(value => BsonNumber(value)))).getOrElse(BsonNull())
-          case DataType.DT_COMPLEX128 =>
-            data.get(modelField.name).map(tensorProto => BsonArray(tensorProto.dcomplexVal.map(value => BsonNumber(value)))).getOrElse(BsonNull())
-          case DataType.DT_HALF =>
-            data.get(modelField.name).map(tensorProto => BsonArray(tensorProto.halfVal.map(value => BsonNumber(value)))).getOrElse(BsonNull())
-          case DataType.DT_UINT32 =>
-            data.get(modelField.name).map(tensorProto => BsonArray(tensorProto.uint32Val.map(value => BsonNumber(value)))).getOrElse(BsonNull())
-          case DataType.DT_UINT64 =>
-            data.get(modelField.name).map(tensorProto => BsonArray(tensorProto.uint64Val.map(value => BsonNumber(value)))).getOrElse(BsonNull())
-          case DataType.DT_MAP =>
-            logger.warn(s"Cannot serialize DT_MAP type for `${modelField.name}` field")
-            BsonNull() // TODO: serialize DT_MAP type
-          case DataType.DT_RESOURCE =>
-            logger.warn(s"Cannot serialize DT_RESOURCE type for `${modelField.name}` field")
-            BsonNull() // TODO: serialize DT_RESOURCE type
-          case DataType.DT_VARIANT =>
-            logger.warn(s"Cannot serialize DT_VARIANT type for `${modelField.name}` field")
-            BsonNull() // TODO: serialize DT_VARIANT type
-          case DataType.DT_INVALID =>
-            logger.warn(s"DataType is DT_INVALID for `${modelField.name}`")
-            BsonNull()
-          case DataType.Unrecognized(value) => BsonNull()
-        }
+        case Right(_) => data.get(modelField.name).map(tensorDataToBson).getOrElse(BsonNull())
       }
       val fieldChecks = checks.getOrElse(modelField.name, Seq.empty)
       val bsonScore = getScore(fieldChecks)
@@ -194,10 +187,6 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
             "metricSpecId" -> check.metricSpecId.map(BsonString.apply).getOrElse(BsonNull())
           )
         }))
-//        s"_hs_raw_checks.$field.check" -> BsonArray(checkList.map(_.check).map(BsonBoolean.apply)),
-//        s"_hs_raw_checks.$field.description" -> BsonArray(checkList.map(_.description).map(BsonString.apply)),
-//        s"_hs_raw_checks.$field.threshold" -> BsonArray(checkList.map(_.threshold).map(BsonNumber.apply)),
-//        s"_hs_raw_checks.$field.value" -> BsonArray(checkList.map(_.value).map(BsonNumber.apply))
     }
     
     val bsonChecks = maybeBsonChecks.map(_.checks).getOrElse(Seq.empty) :+ 
@@ -207,6 +196,9 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
       ("_hs_score" -> bsonScore) :+
       ("_hs_overall_score" -> overallScore) :+
       ("_hs_model_version_id" -> BsonNumber(modelVersion.id)) :+
+      ("_hs_model_name" -> BsonString(modelVersion.model.map(_.name).getOrElse("_unknown"))) :+
+      ("_hs_model_incremental_version" -> BsonNumber(modelVersion.version)) :+
+      ("_hs_request_id" -> ei.metadata.map(_.requestId).map(BsonString.apply).getOrElse(BsonNull())) :+
       ("_id" -> objectId)
     val insertDocument = Document(bsonChecks)
     
@@ -214,7 +206,7 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
     val aggregateQuery = Document(
       "$inc" -> increments,
       "$set" -> Document("_hs_last_id" -> objectId),
-      "$setOnInsert" -> Document("_hs_first_id" -> objectId, "_hs_model_version_id" -> BsonNumber(modelVersion.id))
+      "$setOnInsert" -> Document("_hs_first_id" -> objectId, "_hs_model_version_id" -> BsonNumber(modelVersion.id), "_hs_model_name" -> BsonString(modelVersion.model.map(_.name).getOrElse("_unknown")))
     )
 
     checkCollection.insertOne(insertDocument).toFuture().liftToAsync *> 
@@ -223,10 +215,5 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
         update = aggregateQuery,
         options = (new UpdateOptions).upsert(true)
       ).toFuture().liftToAsync.map(_ => Unit)
-    
-//    for {
-//      _ <- 
-//      _ <
-//    } yield Unit
   }
 }

@@ -124,7 +124,6 @@ class MetricSpecServiceInterpreter[F[_] : Sync](transactor: Transactor[F]) exten
            FROM metric_specs
            WHERE modelVersionId = $modelVersionId AND kind = 'CustomModelMetricSpec'
          """
-    println(sql, modelVersionId)
     sql
       .query[MetricSpecFields]
       .stream

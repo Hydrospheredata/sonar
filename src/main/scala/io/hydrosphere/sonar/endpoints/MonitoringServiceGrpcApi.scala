@@ -34,19 +34,18 @@ class MonitoringServiceGrpcApi(recipient: ActorRef[SonarSupervisor.Message], pro
         case Some(md) =>
           for {
             modelVersion <- modelDataService.getModelVersion(md.modelVersionId)
-            _ = logger.info("got modelVersion")
+            _ = logger.info(s"${md.modelVersionId} got modelVersion")
             profiles <- profileStorageService.getProfiles(md.modelVersionId, ProfileSourceKind.Training)
-            _ = logger.info("got profiles")
+            _ = logger.info(s"${md.modelVersionId} got profiles")
             profileChecks = ProfileChecks.check(profiles, executionInformation)
-            _ = logger.info("computed checks")
+            _ = logger.info(s"${md.modelVersionId} computed checks")
             // TODO: get all metrics
             metricSpecs <- metricSpecService.getCustomMetricSpecByModelVersion(md.modelVersionId)
-            _ = logger.info(s"got metricspecs: ${metricSpecs}")
+            _ = logger.info(s"${md.modelVersionId} got metricspecs: ${metricSpecs}")
             // TODO: move to separated class
             metricChecks <- maybeRequest match {
               case Some(req) => metricSpecs.collect {
                 case CustomModelMetricSpec(name, modelVersionId, config, withHealth, id) =>
-                  logger.info("We are in CustomModelMetricSpec")
                   predictionService
                     .callApplication(config.applicationName, req)
                     .flatMap { predictResponse =>
@@ -60,7 +59,7 @@ class MonitoringServiceGrpcApi(recipient: ActorRef[SonarSupervisor.Message], pro
                           case GreaterEq => Check(value >= config.threshold.getOrElse(Double.MaxValue), name, value, config.threshold.getOrElse(Double.MaxValue), Some(id))
                           case LessEq => Check(value <= config.threshold.getOrElse(Double.MinValue), name, value, config.threshold.getOrElse(Double.MinValue), Some(id))
                         })
-                        case None => IO.raiseError[Check](new RuntimeException("cmpOperator is empty"))
+                        case None => IO.raiseError[Check](new RuntimeException(s"${md.modelVersionId} cmpOperator is empty"))
                       }
                     }
                     .attempt
@@ -74,8 +73,8 @@ class MonitoringServiceGrpcApi(recipient: ActorRef[SonarSupervisor.Message], pro
         case None => IO.unit // TODO: do something 
       }
       effect.unsafeRunAsync {
-        case Left(value) => logger.error("error while saving checks", value)
-        case Right(value) => logger.info("checks are done")
+        case Left(value) => logger.error(s"error while saving checks", value)
+        case Right(value) => logger.info(s"${executionInformation.metadata.get.modelVersionId} checks are done")
       }
       Empty()
     }
