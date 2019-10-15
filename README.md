@@ -69,7 +69,7 @@ POST /monitoring/metricspec
 }
 ```
 
-- `LatenctMetricSpec` – Request Latency
+- `LatencyMetricSpec` – Request Latency
 ```
 {
     "interval": long (in seconds),
