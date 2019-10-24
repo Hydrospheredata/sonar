@@ -17,7 +17,7 @@ class RFProcessor(context: ActorContext[Processor.MetricMessage], metricSpec: RF
   override def onMessage(msg: MetricMessage): Behavior[MetricMessage] = msg match {
     case MetricRequest(payload, saveTo) =>
       context.log.debug(s"Computing RF: $payload")
-      predictionService.callApplication(metricSpec.config.applicationName,
+      predictionService.predict(metricSpec.id,
         inputs = Map(
           "features" -> DoubleTensor(TensorShape.vector(-1), payload.getDoubleInput(metricSpec.config.input)).toProto
         )
@@ -36,7 +36,7 @@ class RFProcessor(context: ActorContext[Processor.MetricMessage], metricSpec: RF
           )
           val metric = Metric("randomforest", score, labels, health, payload.getTimestamp)
           saveTo ! MetricWriter.ProcessedMetric(Seq(metric))
-        case Left(exc) => context.log.error(exc, s"Error while requesting RF prediction (${metricSpec.config.applicationName}) for modelVersion ${metricSpec.modelVersionId}")
+        case Left(exc) => context.log.error(exc, s"Error while requesting RF prediction for modelVersion ${metricSpec.modelVersionId}")
       }
       this
   }

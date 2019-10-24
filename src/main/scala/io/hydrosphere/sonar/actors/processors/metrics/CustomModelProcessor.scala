@@ -22,7 +22,7 @@ class CustomModelProcessor(context: ActorContext[Processor.MetricMessage], metri
       } yield inputs ++ outputs
       maybeRequest match {
         case Some(request) =>
-          predictionService.callApplication(metricSpec.config.applicationName, request).unsafeRunAsync {
+          predictionService.predict(metricSpec.id, request).unsafeRunAsync {
             case Right(response) =>
               val value = response.outputs.get("value").flatMap(_.doubleVal.headOption).getOrElse(0d)
               val health = if (metricSpec.withHealth) {
@@ -49,7 +49,7 @@ class CustomModelProcessor(context: ActorContext[Processor.MetricMessage], metri
                 health,
                 payload.getTimestamp)
               saveTo ! MetricWriter.ProcessedMetric(Seq(metric))
-            case Left(exc) => context.log.error(exc, s"Error while requesting Custom Model (${metricSpec.config.applicationName}) prediction for modelVersion ${metricSpec.modelVersionId}")
+            case Left(exc) => context.log.error(exc, s"Error while requesting Custom Model prediction for modelVersion ${metricSpec.modelVersionId}")
           }
         case None => context.log.warning("Custom Model Metric Processor: request or response is empty")
       }

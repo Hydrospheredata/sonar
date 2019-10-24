@@ -22,7 +22,7 @@ class ImageAEProcessor(context: ActorContext[Processor.MetricMessage], metricSpe
       } yield inputs ++ outputs
       maybeRequest match {
         case Some(request) =>
-          predictionService.callApplication(metricSpec.config.applicationName, request).unsafeRunAsync {
+          predictionService.predict(metricSpec.id, request).unsafeRunAsync {
             case Right(value) =>
               val reconstructed = value.outputs.get("score").flatMap(_.doubleVal.headOption).getOrElse(0d)
               val health = if (metricSpec.withHealth) {

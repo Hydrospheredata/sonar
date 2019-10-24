@@ -1,50 +1,35 @@
 package io.hydrosphere.sonar.services
 
+import cats.data.OptionT
 import cats.effect.Async
-import io.grpc.{ClientInterceptors, ManagedChannelBuilder}
-import io.hydrosphere.serving.grpc.{AuthorityReplacerInterceptor, Headers}
-import io.hydrosphere.serving.tensorflow.api.model.ModelSpec
-import io.hydrosphere.serving.tensorflow.api.predict.{PredictRequest, PredictResponse}
-import io.hydrosphere.serving.tensorflow.api.prediction_service.PredictionServiceGrpc
+import cats.effect.concurrent.Ref
+import cats.implicits._
+import io.hydrosphere.serving.gateway.api.ServablePredictRequest
+import io.hydrosphere.serving.tensorflow.api.predict.PredictResponse
 import io.hydrosphere.serving.tensorflow.tensor.TensorProto
-import io.hydrosphere.sonar.config.Configuration
-import io.hydrosphere.sonar.utils.FutureOps
-
-import scala.concurrent.duration._
+import io.hydrosphere.sonar.utils.grpc.GatewayServiceWrapper
 
 trait PredictionService[F[_]] {
-  def callApplication(request: PredictRequest): F[PredictResponse]
-  def callApplication(applicationName: String, inputs: Map[String, TensorProto]): F[PredictResponse]
+  def predict(metricId: String, inputs: Map[String, TensorProto]): F[PredictResponse]
 }
 
-class PredictionServiceGrpcInterpreter[F[_] : Async](config: Configuration) extends PredictionService[F] {
-
-  import FutureOps._
-
-  // TODO: remove copypaste
-  private lazy val grpcChannel = {
-    val deadline = 2 minutes
-    val builder = ManagedChannelBuilder.forAddress(config.sidecar.host, config.sidecar.grpcPort)
-    builder.enableRetry()
-    builder.usePlaintext()
-    builder.keepAliveTimeout(deadline.length, deadline.unit)
-    ClientInterceptors.intercept(builder.build(), new AuthorityReplacerInterceptor +: Headers.interceptors: _*)
-  }
-
-  private lazy val predictionClient = PredictionServiceGrpc.stub(grpcChannel)
-
-//  private lazy val managerClient = ManagerServiceGrpc.stub(grpcChannel)
-
-  override def callApplication(request: PredictRequest): F[PredictResponse] = predictionClient
-    .withOption(AuthorityReplacerInterceptor.DESTINATION_KEY, "gateway")
-    .predict(request)
-    .liftToAsync[F]
-
-  override def callApplication(applicationName: String, inputs: Map[String, TensorProto]): F[PredictResponse] = {
-    callApplication(PredictRequest(
-      modelSpec = Some(ModelSpec(applicationName, None, "")),
-      inputs
-    ))
-  }
+trait MetricServableMapper[F[_]] {
+  def getServable(metricId: String): F[Option[String]]
 }
 
+object PredictionService {
+
+  case class MissingServableError(metricId: String) extends Throwable
+
+  def apply[F[_] : Async](client: GatewayServiceWrapper[F], mapper: MetricServableMapper[F]): PredictionService[F] = {
+    new PredictionService[F] {
+      override def predict(metricId: String, inputs: Map[String, TensorProto]): F[PredictResponse] = {
+        for {
+          servableName <- OptionT(mapper.getServable(metricId)).getOrElseF(MissingServableError(metricId).raiseError[F, String])
+          request = ServablePredictRequest(servableName = servableName, data = inputs)
+          result <- client.shadowlessPredictServable(request)
+        } yield result
+      }
+    }
+  }
+}

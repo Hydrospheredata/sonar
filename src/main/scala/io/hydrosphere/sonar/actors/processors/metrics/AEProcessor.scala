@@ -21,7 +21,7 @@ class AEProcessor(context: ActorContext[Processor.MetricMessage], metricSpec: AE
     case MetricRequest(payload, saveTo) =>
       context.log.debug(s"Computing AE: $payload")
       val input = payload.getDoubleInput(metricSpec.config.input)
-      predictionService.callApplication(metricSpec.config.applicationName,
+      predictionService.predict(metricSpec.id,
         inputs = Map(
           "X" -> DoubleTensor(TensorShape.mat(-1, 112), input).toProto
         )
