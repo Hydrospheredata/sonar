@@ -22,7 +22,7 @@ class CustomModelProcessor(context: ActorContext[Processor.MetricMessage], metri
       } yield inputs ++ outputs
       maybeRequest match {
         case Some(request) =>
-          predictionService.predict(metricSpec.id, request).unsafeRunAsync {
+          predictionService.predict(metricSpec.config.servableName, request).unsafeRunAsync {
             case Right(response) =>
               val value = response.outputs.get("value").flatMap(_.doubleVal.headOption).getOrElse(0d)
               val health = if (metricSpec.withHealth) {

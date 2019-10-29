@@ -3,6 +3,7 @@ package io.hydrosphere.sonar
 import java.util.concurrent.Executors
 
 import akka.actor.typed.ActorSystem
+import akka.util.Timeout
 import cats.effect._
 import cats.effect.concurrent.Ref
 import cats.implicits._
@@ -18,6 +19,7 @@ import io.hydrosphere.sonar.actors.SonarSupervisor
 import io.hydrosphere.sonar.config.{Configuration, H2, Postgres}
 import io.hydrosphere.sonar.endpoints.{HttpService, MonitoringServiceGrpcApi}
 import io.hydrosphere.sonar.services._
+import io.hydrosphere.sonar.utils.grpc.GatewayServiceWrapper
 import org.flywaydb.core.Flyway
 import org.h2.jdbcx.JdbcConnectionPool
 import org.slf4j.bridge.SLF4JBridgeHandler
@@ -32,8 +34,10 @@ object Dependencies {
     case Postgres(jdbcUrl, user, pass) => Async[F].delay(Transactor.fromDriverManager[F]("org.postgresql.Driver", jdbcUrl, user, pass))
   }
   
-  def metricService[F[_]: Sync](transactor: Transactor[F]): F[MetricSpecService[F]] = 
-    Sync[F].delay(new MetricSpecServiceInterpreter[F](transactor))
+  def metricService[F[_]: Async](as: ActorSystem[Any])(implicit timeout: Timeout): F[MetricSpecService[F]] =
+    Async[F].delay{
+      new MetricSpecServiceInterpreter[F]()
+    }
  
   def httpService[F[_]: Effect](metricSpecService: MetricSpecService[F], metricStorageService: MetricStorageService[F], profileStorageService: ProfileStorageService[F], modelDataService: ModelDataService[F], batchProfileService: BatchProfileService[F, fs2.Stream])(implicit cs: ContextShift[F]): F[HttpService[F]] = 
     Effect[F].delay(new HttpService[F](metricSpecService, metricStorageService, profileStorageService, modelDataService, batchProfileService))
@@ -43,8 +47,8 @@ object Dependencies {
     instance <- Async[F].delay(new ModelDataServiceGrpcInterpreter[F](config, state))
   } yield instance
   
-  def predictionService[F[_]: Async](config: Configuration): F[PredictionService[F]] = 
-    Async[F].delay(new PredictionServiceGrpcInterpreter[F](config))
+  def predictionService[F[_]: Async](gtw: GatewayServiceWrapper[F]): F[PredictionService[F]] =
+    Async[F].delay(PredictionService.apply[F](gtw))
   
   def metricStorageService[F[_]: Async](config: Configuration): F[MetricStorageService[F]] = 
     Async[F].delay(new MetricStorageServiceInfluxInterpreter[F](config))

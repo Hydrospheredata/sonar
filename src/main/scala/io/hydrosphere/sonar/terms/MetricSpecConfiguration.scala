@@ -17,4 +17,4 @@ case class ExternalMetricSpecConfiguration(input: String, applicationName: Strin
 case class HealthRateMetricSpecConfiguration(interval: Long, threshold: Option[Double]) extends MetricSpecConfiguration
 case class CounterMetricSpecConfiguration(interval: Long) extends MetricSpecConfiguration
 case class EmptyMetricSpecConfiguration() extends MetricSpecConfiguration
-case class CustomModelMetricSpecConfiguration(modelVersionId: Long, threshold: Option[Double], thresholdCmpOperator: Option[ThresholdCmpOperator]) extends MetricSpecConfiguration
+case class CustomModelMetricSpecConfiguration(modelVersionId: Long, servableName: String, threshold: Option[Double], thresholdCmpOperator: Option[ThresholdCmpOperator]) extends MetricSpecConfiguration
