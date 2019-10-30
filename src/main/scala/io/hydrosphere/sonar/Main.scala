@@ -24,11 +24,12 @@ import io.hydrosphere.sonar.actors.{MetricSpecDiscoverer, SonarSupervisor}
 import io.hydrosphere.sonar.config.{Configuration, H2, Postgres}
 import io.hydrosphere.sonar.endpoints.{HttpService, MonitoringServiceGrpcApi}
 import io.hydrosphere.sonar.services._
-import io.hydrosphere.sonar.utils.grpc.GatewayServiceWrapper
+import io.hydrosphere.sonar.utils.GatewayServiceRpc
 import org.flywaydb.core.Flyway
 import org.h2.jdbcx.JdbcConnectionPool
 import org.slf4j.bridge.SLF4JBridgeHandler
 import pureconfig.generic.auto._
+
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 
@@ -53,7 +54,7 @@ object Dependencies {
     instance <- Async[F].delay(new ModelDataServiceGrpcInterpreter[F](config, state))
   } yield instance
   
-  def predictionService[F[_]: Async](gtw: GatewayServiceWrapper[F]): F[PredictionService[F]] =
+  def predictionService[F[_]: Async](gtw: GatewayServiceRpc[F]): F[PredictionService[F]] =
     Async[F].delay(PredictionService.apply[F](gtw))
   
   def metricStorageService[F[_]: Async](config: Configuration): F[MetricStorageService[F]] = 
@@ -95,19 +96,6 @@ object Main extends IOApp with Logging {
     ServingDiscoveryGrpc.stub(channel)
   }
 
-  def createGatewayStub[F[_]: Async](channel: Channel): F[GatewayServiceWrapper[F]] = Async[F].delay {
-    import io.hydrosphere.sonar.utils.FutureOps._
-    val rawStub = GatewayServiceGrpc.stub(channel)
-    new GatewayServiceWrapper[F] {
-      override def shadowlessPredictServable(request: ServablePredictRequest): F[PredictResponse] = {
-        rawStub
-          .withOption(AuthorityReplacerInterceptor.DESTINATION_KEY, "gateway")
-          .shadowlessPredictServable(request)
-          .liftToAsync[F]
-      }
-    }
-  }
-
   def runGrpcServer[F[_]: Sync](config: Configuration, monitoringService: MonitoringService): F[Server] = Sync[F].delay {
     val builder = BuilderWrapper(NettyServerBuilder.forPort(config.grpc.port).maxInboundMessageSize(config.grpc.maxSize))
       .addService(MonitoringServiceGrpc.bindService(monitoringService, scala.concurrent.ExecutionContext.global))
@@ -136,7 +124,7 @@ object Main extends IOApp with Logging {
     _ <- IO(logger.info(config.toString))
 
     grpcChannel <- createGrpcChannel[IO](config)
-    gatewayRpc <- createGatewayStub[IO](grpcChannel)
+    gatewayRpc <- GatewayServiceRpc.make(grpcChannel)
     discoveryRpcStub <- createDiscoveryStub[IO](grpcChannel)
 
     discoveryAS <- discoveryActorSystem[IO](3.minute, discoveryRpcStub)
