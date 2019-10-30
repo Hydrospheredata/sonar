@@ -124,7 +124,7 @@ object Main extends IOApp with Logging {
     _ <- IO(logger.info(config.toString))
 
     grpcChannel <- createGrpcChannel[IO](config)
-    gatewayRpc <- GatewayServiceRpc.make(grpcChannel)
+    gatewayRpc = GatewayServiceRpc.make[IO](grpcChannel)
     discoveryRpcStub <- createDiscoveryStub[IO](grpcChannel)
 
     discoveryAS <- discoveryActorSystem[IO](3.minute, discoveryRpcStub)
