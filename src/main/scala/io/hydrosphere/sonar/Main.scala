@@ -9,13 +9,18 @@ import cats.effect.concurrent.Ref
 import cats.implicits._
 import com.twitter.finagle.Http
 import doobie._
-import io.grpc.Server
 import io.grpc.netty.NettyServerBuilder
-import io.hydrosphere.serving.grpc.BuilderWrapper
+import io.grpc.{Channel, ClientInterceptors, ManagedChannelBuilder, Server}
+import io.hydrosphere.serving.discovery.serving.ServingDiscoveryGrpc
+import io.hydrosphere.serving.discovery.serving.ServingDiscoveryGrpc.ServingDiscovery
+import io.hydrosphere.serving.gateway.api.{GatewayServiceGrpc, ServablePredictRequest}
+import io.hydrosphere.serving.grpc.{AuthorityReplacerInterceptor, BuilderWrapper, Headers}
 import io.hydrosphere.serving.manager.grpc.entities.ModelVersion
 import io.hydrosphere.serving.monitoring.api.MonitoringServiceGrpc
 import io.hydrosphere.serving.monitoring.api.MonitoringServiceGrpc.MonitoringService
-import io.hydrosphere.sonar.actors.SonarSupervisor
+import io.hydrosphere.serving.tensorflow.api.predict.PredictResponse
+import io.hydrosphere.sonar.actors.MetricSpecDiscoverer.DiscoveryMsg
+import io.hydrosphere.sonar.actors.{MetricSpecDiscoverer, SonarSupervisor}
 import io.hydrosphere.sonar.config.{Configuration, H2, Postgres}
 import io.hydrosphere.sonar.endpoints.{HttpService, MonitoringServiceGrpcApi}
 import io.hydrosphere.sonar.services._
@@ -24,8 +29,8 @@ import org.flywaydb.core.Flyway
 import org.h2.jdbcx.JdbcConnectionPool
 import org.slf4j.bridge.SLF4JBridgeHandler
 import pureconfig.generic.auto._
-
 import scala.concurrent.ExecutionContext
+import scala.concurrent.duration._
 
 object Dependencies {
   
@@ -34,11 +39,12 @@ object Dependencies {
     case Postgres(jdbcUrl, user, pass) => Async[F].delay(Transactor.fromDriverManager[F]("org.postgresql.Driver", jdbcUrl, user, pass))
   }
   
-  def metricService[F[_]: Async](as: ActorSystem[Any])(implicit timeout: Timeout): F[MetricSpecService[F]] =
-    Async[F].delay{
-      new MetricSpecServiceInterpreter[F]()
+  def metricService[F[_]: Async](as: ActorSystem[DiscoveryMsg], timeout: Timeout): F[MetricSpecService[F]] = Async[F].delay {
+      implicit val scheduler = as.scheduler
+      implicit val t = timeout
+      new MetricSpecServiceInterpreter[F](as)
     }
- 
+
   def httpService[F[_]: Effect](metricSpecService: MetricSpecService[F], metricStorageService: MetricStorageService[F], profileStorageService: ProfileStorageService[F], modelDataService: ModelDataService[F], batchProfileService: BatchProfileService[F, fs2.Stream])(implicit cs: ContextShift[F]): F[HttpService[F]] = 
     Effect[F].delay(new HttpService[F](metricSpecService, metricStorageService, profileStorageService, modelDataService, batchProfileService))
   
@@ -72,6 +78,36 @@ object Main extends IOApp with Logging {
   def createActorSystem[F[_]: Sync](config: Configuration, metricSpecService: MetricSpecService[IO], modelDataService: ModelDataService[IO], predictionService: PredictionService[IO], metricStorageService: MetricStorageService[IO], profileStorageService: ProfileStorageService[IO]): F[ActorSystem[SonarSupervisor.Message]] =
     Sync[F].delay(ActorSystem[SonarSupervisor.Message](SonarSupervisor(config, metricSpecService, modelDataService, predictionService, metricStorageService, profileStorageService), "sonar"))
 
+  def discoveryActorSystem[F[_]: Sync](reconnect: FiniteDuration,stub: ServingDiscovery): F[ActorSystem[DiscoveryMsg]] = Sync[F].delay {
+    ActorSystem[DiscoveryMsg](MetricSpecDiscoverer(reconnect, stub), "serving-discovery")
+  }
+
+  def createGrpcChannel[F[_]: Sync](config: Configuration): F[Channel] = Sync[F].delay {
+    val deadline = 2.minutes
+    val builder = ManagedChannelBuilder.forAddress(config.sidecar.host, config.sidecar.grpcPort)
+    builder.enableRetry()
+    builder.usePlaintext()
+    builder.keepAliveTimeout(deadline.length, deadline.unit)
+    ClientInterceptors.intercept(builder.build(), new AuthorityReplacerInterceptor +: Headers.interceptors: _*)
+  }
+
+  def createDiscoveryStub[F[_]: Sync](channel: Channel): F[ServingDiscoveryGrpc.ServingDiscoveryStub] = Sync[F].delay {
+    ServingDiscoveryGrpc.stub(channel)
+  }
+
+  def createGatewayStub[F[_]: Async](channel: Channel): F[GatewayServiceWrapper[F]] = Async[F].delay {
+    import io.hydrosphere.sonar.utils.FutureOps._
+    val rawStub = GatewayServiceGrpc.stub(channel)
+    new GatewayServiceWrapper[F] {
+      override def shadowlessPredictServable(request: ServablePredictRequest): F[PredictResponse] = {
+        rawStub
+          .withOption(AuthorityReplacerInterceptor.DESTINATION_KEY, "gateway")
+          .shadowlessPredictServable(request)
+          .liftToAsync[F]
+      }
+    }
+  }
+
   def runGrpcServer[F[_]: Sync](config: Configuration, monitoringService: MonitoringService): F[Server] = Sync[F].delay {
     val builder = BuilderWrapper(NettyServerBuilder.forPort(config.grpc.port).maxInboundMessageSize(config.grpc.maxSize))
       .addService(MonitoringServiceGrpc.bindService(monitoringService, scala.concurrent.ExecutionContext.global))
@@ -95,23 +131,28 @@ object Main extends IOApp with Logging {
 
   override def run(args: List[String]): IO[ExitCode] = for {
     _ <- setupLogging[IO]
-    
+
     config <- loadConfiguration[IO]
     _ <- IO(logger.info(config.toString))
-    
-    transactor <- Dependencies.dbTransactor[IO](config)
-    metricSpecService <- Dependencies.metricService[IO](transactor)
+
+    grpcChannel <- createGrpcChannel[IO](config)
+    gatewayRpc <- createGatewayStub[IO](grpcChannel)
+    discoveryRpcStub <- createDiscoveryStub[IO](grpcChannel)
+
+    discoveryAS <- discoveryActorSystem[IO](3.minute, discoveryRpcStub)
+
+    metricSpecService <- Dependencies.metricService[IO](discoveryAS, 3.minutes)
     metricStorageService <- Dependencies.metricStorageService[IO](config)
     profileStorageService <- Dependencies.profileStorageService[IO](config)
     modelDataService <- Dependencies.modelDataService[IO](config)
     batchProfileService <- Dependencies.batchProfileService(config, profileStorageService)
     httpService <- Dependencies.httpService[IO](metricSpecService, metricStorageService, profileStorageService, modelDataService, batchProfileService)
-    predictionService <- Dependencies.predictionService[IO](config)
+    predictionService <- Dependencies.predictionService[IO](gatewayRpc)
     
     _ <- runDbMigrations[IO](config)
     
     actorSystem <- createActorSystem[IO](config, metricSpecService, modelDataService, predictionService, metricStorageService, profileStorageService)
-    
+
     grpc <- runGrpcServer[IO](config, new MonitoringServiceGrpcApi(actorSystem))
     _ <- IO(logger.info(s"GRPC server started on port ${grpc.getPort}"))
     

@@ -19,7 +19,6 @@ import scala.util.Try
 
 class MetricSpecDiscoverer(
                             context: ActorContext[DiscoveryMsg],
-                            clientDeadline: FiniteDuration,
                             reconnectTimeout: FiniteDuration,
                             stub: ServingDiscovery
                           )
@@ -169,5 +168,9 @@ object MetricSpecDiscoverer {
       config = config,
       id = gms.id
     )
+  }
+
+  def apply(reconnectTimeout: FiniteDuration, stub: ServingDiscovery): Behavior[DiscoveryMsg] = {
+    Behaviors.setup[DiscoveryMsg](context => new MetricSpecDiscoverer(context, reconnectTimeout, stub))
   }
 }

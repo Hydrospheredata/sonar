@@ -66,14 +66,6 @@ class HttpService[F[_] : Monad : Effect](
     Ok("ok").pure[F]
   }
 
-  def createMetricSpec = post("monitoring" :: "metricspec" :: stringBody) { body: String =>
-    val metricSpec = decode[MetricSpec](body)
-    metricSpec match {
-      case Left(error) => throw error
-      case Right(value) => metricSpecService.createMetricSpec(value).map(Created)
-    }
-  }
-
   def getMetricSpecById = get("monitoring" :: "metricspec" :: path[String]) { id: String =>
     metricSpecService.getMetricSpecById(id).map(Ok)
   }
@@ -84,10 +76,6 @@ class HttpService[F[_] : Monad : Effect](
 
   def getAllMetricSpecs = get("monitoring" :: "metricspec") {
     metricSpecService.getAllMetricSpecs.map(Ok)
-  }
-  
-  def deleteMetricSpec = delete("monitoring" :: "metricspec" :: path[String]) { metricSpecId: String =>
-    metricSpecService.remove(metricSpecId).map(_ => Ok("ok"))
   }
 
   def getMetricsAggregation = get("monitoring"
@@ -174,7 +162,7 @@ class HttpService[F[_] : Monad : Effect](
     Ok(BuildInfo.value).pure[F]
   }
   
-  def endpoints = (getBuildInfo :+: healthCheck :+: createMetricSpec :+: getMetricSpecById :+: getAllMetricSpecs :+: getMetricSpecsByModelVersion :+: getMetricsAggregation :+: getMetricsRange :+: getMetrics :+: getProfiles :+: getProfileNames :+: batchProfile :+: getBatchStatus :+: deleteMetricSpec :+: s3BatchProfile) handle {
+  def endpoints = (getBuildInfo :+: healthCheck :+: getMetricSpecById :+: getAllMetricSpecs :+: getMetricSpecsByModelVersion :+: getMetricsAggregation :+: getMetricsRange :+: getMetrics :+: getProfiles :+: getProfileNames :+: batchProfile :+: getBatchStatus :+: s3BatchProfile) handle {
     case e: io.finch.Error.NotParsed =>
       logger.warn(s"Can't parse json with message: ${e.getMessage()}")
       BadRequest(new RuntimeException(e))
