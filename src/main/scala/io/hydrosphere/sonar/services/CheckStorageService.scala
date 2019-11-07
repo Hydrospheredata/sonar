@@ -202,7 +202,7 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
       ("_id" -> objectId)
     val insertDocument = Document(bsonChecks)
     
-    val increments = maybeBsonChecks.map(_.aggregates).getOrElse(Seq.empty) :+ ("_hs_requests" -> BsonNumber(1))
+    val increments = maybeBsonChecks.map(_.aggregates).getOrElse(Seq.empty) ++ checks.getOrElse("overall", Seq.empty).map(check => Seq(s"_hs_metrics.${check.description}.checked" -> BsonNumber(1), s"_hs_metrics.${check.description}.passed" -> BsonNumber(check.check.toInt))).flatten :+ ("_hs_requests" -> BsonNumber(1))
     val aggregateQuery = Document(
       "$inc" -> increments,
       "$set" -> Document("_hs_last_id" -> objectId),
