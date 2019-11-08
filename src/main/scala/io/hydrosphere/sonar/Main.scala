@@ -7,6 +7,8 @@ import akka.util.Timeout
 import cats.effect._
 import cats.effect.concurrent.Ref
 import cats.implicits._
+import com.mongodb.{ConnectionString, MongoCredential}
+import com.mongodb.MongoCredential.createCredential
 import com.twitter.finagle.Http
 import doobie._
 import io.grpc.netty.NettyServerBuilder
@@ -27,6 +29,7 @@ import io.hydrosphere.sonar.services._
 import io.hydrosphere.sonar.utils.GatewayServiceRpc
 import org.flywaydb.core.Flyway
 import org.h2.jdbcx.JdbcConnectionPool
+import org.mongodb.scala.{MongoClient, MongoClientSettings}
 import org.slf4j.bridge.SLF4JBridgeHandler
 import pureconfig.generic.auto._
 
@@ -34,7 +37,29 @@ import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 
 object Dependencies {
-  
+
+  def mongoClient[F[_]: Sync](config: Configuration): F[MongoClient] = {
+    Sync[F].delay {
+      val builder = MongoClientSettings
+        .builder()
+        .applyToClusterSettings(b => b.applyConnectionString(new ConnectionString(s"mongodb://${config.mongo.host}:${config.mongo.port}/${config.mongo.database}?authSource=admin")))
+        .applyToConnectionPoolSettings(b => b.maxWaitQueueSize(1000).maxSize(200))
+      val credentials: Option[MongoCredential] = for {
+        user <- config.mongo.user
+        pass <- config.mongo.pass
+        authDb <- config.mongo.authDb
+      } yield createCredential(user, authDb, pass.toCharArray)
+
+      credentials match {
+        case Some(creds) => builder.credential(creds)
+        case None =>
+      }
+
+      val settings = builder.build()
+      MongoClient(settings)
+    }
+  }
+
   def dbTransactor[F[_]: Async](config: Configuration)(implicit cs: ContextShift[F]): F[Transactor[F]] = config.db match {
     case H2(jdbcUrl, user, pass) => Async[F].delay(Transactor.fromDataSource[F](JdbcConnectionPool.create(jdbcUrl, user, pass), ExecutionContext.fromExecutor(Executors.newFixedThreadPool(32)), ExecutionContext.fromExecutor(Executors.newCachedThreadPool())))
     case Postgres(jdbcUrl, user, pass) => Async[F].delay(Transactor.fromDriverManager[F]("org.postgresql.Driver", jdbcUrl, user, pass))
@@ -46,8 +71,8 @@ object Dependencies {
       new MetricSpecServiceInterpreter[F](as)
     }
 
-  def httpService[F[_]: Effect](metricSpecService: MetricSpecService[F], metricStorageService: MetricStorageService[F], profileStorageService: ProfileStorageService[F], modelDataService: ModelDataService[F], batchProfileService: BatchProfileService[F, fs2.Stream])(implicit cs: ContextShift[F]): F[HttpService[F]] = 
-    Effect[F].delay(new HttpService[F](metricSpecService, metricStorageService, profileStorageService, modelDataService, batchProfileService))
+  def httpService[F[_]: Effect](metricSpecService: MetricSpecService[F], metricStorageService: MetricStorageService[F], profileStorageService: ProfileStorageService[F], modelDataService: ModelDataService[F], batchProfileService: BatchProfileService[F, fs2.Stream], checkStorageService: CheckStorageService[F])(implicit cs: ContextShift[F]): F[HttpService[F]] =
+    Effect[F].delay(new HttpService[F](metricSpecService, metricStorageService, profileStorageService, modelDataService, batchProfileService, checkStorageService))
   
   def modelDataService[F[_]: Async](config: Configuration): F[ModelDataService[F]] = for {
     state <- Ref.of[F, Map[Long, ModelVersion]](Map.empty)
@@ -60,9 +85,9 @@ object Dependencies {
   def metricStorageService[F[_]: Async](config: Configuration): F[MetricStorageService[F]] = 
     Async[F].delay(new MetricStorageServiceInfluxInterpreter[F](config))
   
-  def profileStorageService[F[_]: Async](config: Configuration): F[ProfileStorageService[F]] = for {
+  def profileStorageService[F[_]: Async](config: Configuration, client: MongoClient): F[ProfileStorageService[F]] = for {
     state <- Ref.of[F, ProfileStorageServiceMongoInterpreter.ObjectIdState](Map.empty)
-    instance <- Async[F].delay(new ProfileStorageServiceMongoInterpreter[F](config, state))
+    instance <- Async[F].delay(new ProfileStorageServiceMongoInterpreter[F](config, state, client))
   } yield instance
   
   def batchProfileService(config: Configuration, profileStorageService: ProfileStorageService[IO]): IO[BatchProfileService[IO, fs2.Stream]] = {
@@ -72,6 +97,11 @@ object Dependencies {
       instance <- IO.delay(new BatchProfileServiceInterpreter(config, state, profileStorageService))
     } yield instance
   }
+
+  def checkStorageService[F[_]: Async](configuration: Configuration, client: MongoClient): F[CheckStorageService[F]] = for {
+//    state <- Ref.of[F, Seq[CheckStorageService.CheckedRequest]](Seq.empty)
+    instance <- Async[F].delay(new MongoCheckStorageService[F](configuration, client))
+  } yield instance
 }
 
 object Main extends IOApp with Logging {
@@ -119,10 +149,10 @@ object Main extends IOApp with Logging {
 
   override def run(args: List[String]): IO[ExitCode] = for {
     _ <- setupLogging[IO]
-
+    
     config <- loadConfiguration[IO]
     _ <- IO(logger.info(config.toString))
-
+mongoClient <- Dependencies.mongoClient[IO](config)
     grpcChannel <- createGrpcChannel[IO](config)
     gatewayRpc = GatewayServiceRpc.make[IO](grpcChannel)
     discoveryRpcStub <- createDiscoveryStub[IO](grpcChannel)
@@ -131,19 +161,19 @@ object Main extends IOApp with Logging {
 
     metricSpecService <- Dependencies.metricService[IO](discoveryAS, 3.minutes)
     metricStorageService <- Dependencies.metricStorageService[IO](config)
-    profileStorageService <- Dependencies.profileStorageService[IO](config)
+    profileStorageService <- Dependencies.profileStorageService[IO](config, mongoClient)
     modelDataService <- Dependencies.modelDataService[IO](config)
     batchProfileService <- Dependencies.batchProfileService(config, profileStorageService)
-    httpService <- Dependencies.httpService[IO](metricSpecService, metricStorageService, profileStorageService, modelDataService, batchProfileService)
+    checkStorageService <- Dependencies.checkStorageService[IO](config, mongoClient)
+    httpService <- Dependencies.httpService[IO](metricSpecService, metricStorageService, profileStorageService, modelDataService, batchProfileService, checkStorageService)
     predictionService <- Dependencies.predictionService[IO](gatewayRpc)
-    
     _ <- runDbMigrations[IO](config)
-    
+
     actorSystem <- createActorSystem[IO](config, metricSpecService, modelDataService, predictionService, metricStorageService, profileStorageService)
 
-    grpc <- runGrpcServer[IO](config, new MonitoringServiceGrpcApi(actorSystem))
+    grpc <- runGrpcServer[IO](config, new MonitoringServiceGrpcApi(actorSystem, profileStorageService, metricSpecService, predictionService, checkStorageService, modelDataService))
     _ <- IO(logger.info(s"GRPC server started on port ${grpc.getPort}"))
-    
+
     http <- IO(Http.server.withStreaming(true).serve(s"${config.http.host}:${config.http.port}", httpService.api))
     _ <- IO(logger.info(s"HTTP server started on ${http.boundAddress}"))
   } yield ExitCode.Success

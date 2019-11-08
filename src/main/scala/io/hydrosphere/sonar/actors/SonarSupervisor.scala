@@ -10,10 +10,27 @@ import io.hydrosphere.sonar.actors.writers.{MetricWriter, ProfileWriter}
 import io.hydrosphere.sonar.config.Configuration
 import io.hydrosphere.sonar.services._
 import io.hydrosphere.sonar.terms.{MetricSpec, Processable}
+import java.util.concurrent.ConcurrentHashMap
 
 import scala.concurrent.duration._
+import scala.util.Try
 
 object SonarSupervisor {
+  
+  implicit class ConcurrentHashMapImprovements[A, B](hashMap: ConcurrentHashMap[A, B]) {
+    def find(value: B): Option[A] = {
+      Try {
+        hashMap
+          .entrySet()
+          .stream()
+          .filter(_.getValue.equals(value))
+          .map[A](_.getKey)
+          .findFirst()
+          .get() 
+      }.toOption
+    }
+  }
+  
   sealed trait Message
   final case class Request(payload: ExecutionInformation) extends Message
   final case class AddProcessor(metricSpec: MetricSpec) extends Message
@@ -37,30 +54,30 @@ class SonarSupervisor(context: ActorContext[SonarSupervisor.Message])(implicit c
   private lazy val metricWriter = createRestartableActor(MetricWriter(metricStorageService), "metric-writer")
   private lazy val profileWriter = createRestartableActor(ProfileWriter(profileStorageService), "profile-writer")
   
-  private var metricChildren: Map[String, ActorRef[Processor.MetricMessage]] = Map.empty
-  private var profileChildren: Map[(Long, DataProfileType), ActorRef[Processor.ProfileMessage]] = Map.empty
+  private val metricChildren: ConcurrentHashMap[String, ActorRef[Processor.MetricMessage]] = new ConcurrentHashMap[String, ActorRef[Processor.MetricMessage]]
+  private val profileChildren: ConcurrentHashMap[(Long, DataProfileType), ActorRef[Processor.ProfileMessage]] = new ConcurrentHashMap[(Long, DataProfileType), ActorRef[Processor.ProfileMessage]]
   
   private val textProfileProcessor: TextProfileProcessor = new TextProfileProcessor(config)
 
   private def processor[T: Processable](metricSpec: T): Behavior[Processor.MetricMessage] = metricSpec.processor
   
   private def getOrCreateMetricActor(behavior: Behavior[Processor.MetricMessage], name: String): ActorRef[Processor.MetricMessage] = {
-    metricChildren.get(name) match {
+    Option(metricChildren.get(name)) match {
       case Some(actor) => actor
       case None =>
         context.log.debug(s"Creating new metric actor ($name)")
         val actor = context.spawn(behavior, name)
-        metricChildren += name -> actor
+        metricChildren.put(name, actor)
         context.watchWith(actor, MetricProcessorWasTerminated(actor))
         actor
     }
   }
   
   private def getOrCreateProfileActor(behavior: Behavior[Processor.ProfileMessage], modelVersionId: Long, dataType: DataProfileType): ActorRef[Processor.ProfileMessage] = {
-    profileChildren.getOrElse((modelVersionId, dataType), {
+    Option(profileChildren.get((modelVersionId, dataType))).getOrElse({
       context.log.debug(s"Creating new profile actor (${dataType}_$modelVersionId)")
       val actor = context.spawn(behavior, s"${dataType}_$modelVersionId")
-      profileChildren += (modelVersionId, dataType) -> actor
+      profileChildren.put((modelVersionId, dataType), actor)
       context.watchWith(actor, ProfileProcessorWasTerminated(actor))
       actor
     })
@@ -78,7 +95,9 @@ class SonarSupervisor(context: ActorContext[SonarSupervisor.Message])(implicit c
           metricSpecService.getMetricSpecsByModelVersion(modelVersionId).unsafeRunAsync {
             case Right(metricSpecs) => 
               metricSpecs
+                /*_*/
                 .map(spec => getOrCreateMetricActor(processor(spec), s"${spec.id}-${spec.modelVersionId}"))
+                /*_*/
                 .foreach(_ ! Processor.MetricRequest(payload, metricWriter))
             case Left(exc) => context.log.error(exc, s"Error while getting MetricSpecs")
           }
@@ -111,20 +130,28 @@ class SonarSupervisor(context: ActorContext[SonarSupervisor.Message])(implicit c
       
     case AddProcessor(metricSpec) =>
       context.log.debug(s"Got AddProcessor: $metricSpec")
+      /*_*/
       getOrCreateMetricActor(processor(metricSpec), metricSpec.id)
+      /*_*/
       this
     case RemoveProcessor(metricSpecId) =>
       context.log.debug(s"Got RemoveProcessor: $metricSpecId")
-      metricChildren -= metricSpecId
+      metricChildren.remove(metricSpecId)
       this
       
     case MetricProcessorWasTerminated(actor) =>
       context.log.debug(s"Metric Processor actor was terminated")
-      metricChildren.find({case (_, a) => a == actor}).foreach({case (id, _) => metricChildren -= id})
+      metricChildren.find(actor) match {
+        case Some(key) => metricChildren.remove(key) 
+        case None =>
+      }
       this
     case ProfileProcessorWasTerminated(actor) =>
       context.log.debug(s"Profile Processor actor was terminated")
-      profileChildren.find({ case (_, a) => a == actor }).foreach({ case (key, _) => profileChildren -= key })
+      profileChildren.find(actor) match {
+        case Some(key) => profileChildren.remove(key) 
+        case None =>
+      }
       this
   }
 

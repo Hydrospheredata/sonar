@@ -9,7 +9,10 @@ case class MutableCountMinSketch(size: Int, buckets: mutable.Map[Int, Long]) {
   private val mask = width - 1
 
   def add(value: Double): Unit = {
-    var k = (-value * 1e3).toLong ^ Long.MaxValue
+    var k = value match {
+      case 0d => Long.MinValue
+      case _ => (-value * 1e3).toLong ^ Long.MaxValue
+    }
     while (k != 0) {
       buckets(hash(k, 0)) += 1
       buckets(width + hash(k, 1)) += 1
@@ -33,7 +36,10 @@ case class CountMinSketch(size: Int, buckets: Map[Int, Long]) {
   private val mask = width - 1
 
   def add(value: Double): CountMinSketch = {
-    var k = (-value * 1e3).toLong ^ Long.MaxValue
+    var k = value match {
+      case 0d => Long.MinValue
+      case _ => (-value * 1e3).toLong ^ Long.MaxValue
+    }
     val newBucket = mutable.Map.empty[Int, Long].withDefaultValue(0L)
     while (k != 0) {
       newBucket(hash(k, 0)) += 1
