@@ -40,14 +40,14 @@ class MonitoringServiceGrpcApi(recipient: ActorRef[SonarSupervisor.Message], pro
             profileChecks = ProfileChecks.check(profiles, executionInformation)
             _ = logger.info(s"${md.modelVersionId} computed checks")
             // TODO: get all metrics
-            metricSpecs <- metricSpecService.getCustomMetricSpecByModelVersion(md.modelVersionId)
+            metricSpecs <- metricSpecService.getMetricSpecsByModelVersion(md.modelVersionId)
             _ = logger.info(s"${md.modelVersionId} got metricspecs: ${metricSpecs}")
             // TODO: move to separated class
             metricChecks <- maybeRequest match {
               case Some(req) => metricSpecs.collect {
                 case CustomModelMetricSpec(name, modelVersionId, config, withHealth, id) =>
                   predictionService
-                    .callApplication(config.applicationName, req)
+                    .predict(config.servableName, req)
                     .flatMap { predictResponse =>
                       val value = predictResponse.outputs.get("value").flatMap(_.doubleVal.headOption).getOrElse(0d)
                       config.thresholdCmpOperator match {
