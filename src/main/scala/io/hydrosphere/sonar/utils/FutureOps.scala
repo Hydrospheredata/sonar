@@ -3,9 +3,20 @@ package io.hydrosphere.sonar.utils
 import cats.effect.{Async, IO}
 
 import scala.concurrent.Future
+import com.twitter.util.{Future => TwitterFuture}
+
 
 object FutureOps {
-  implicit class FutureLifts[A](f: Future[A]) {
-    def liftToAsync[F[_]: Async]: F[A] = Async[F].liftIO(IO.fromFuture(IO(f)))
+
+  implicit final class FutureLifts[A](val f: Future[A]) extends AnyVal {
+    def liftToAsync[F[_] : Async]: F[A] = Async[F].liftIO(IO.fromFuture(IO(f)))
   }
+
+  implicit final class TwitterFutureLifts[A](val f: TwitterFuture[A]) extends AnyVal {
+    def liftToAsync[F[_] : Async]: F[A] = Async[F].async[A] { cb =>
+      f.onSuccess(x => cb(Right(x)))
+        .onFailure(x => cb(Left(x)))
+    }
+  }
+
 }
