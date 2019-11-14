@@ -49,6 +49,8 @@ then
     [[ ! -z "$MONGO_AUTH_DB" ]] && APP_OPTS="$APP_OPTS -Dmongo.auth-db=$MONGO_AUTH_DB"
     APP_OPTS="$APP_OPTS -Dsidecar.host=$SIDECAR_HOST -Dsidecar.grpc-port=$SIDECAR_GRPC_PORT -Dsidecar.http-port=$SIDECAR_HTTP_PORT"
     APP_OPTS="$APP_OPTS -Dprofile.text.tagger-path=$PROFILE_TEXT_TAGGER_PATH -Dprofile.text.shift-reduce-parser-path=$PROFILE_TEXT_SHIFT_REDUCE_PARSER_PATH -Dprofile.text.lex-parser-path=$PROFILE_TEXT_LEXPARSER_PATH -Dprofile.text.sentiment-path=$PROFILE_TEXT_SENTIMENT_PATH"
+    [[ ! -z "$ALERTING_MANAGER_URL" ]] && APP_OPTS="$APP_OPTS -Dalerting.alertManagerUrl=$ALERTING_MANAGER_URL"
+    [[ ! -z "$ALERTING_FRONTEND_URL" ]] && APP_OPTS="$APP_OPTS -Dalerting.frontendUrl=$ALERTING_FRONTEND_URL"
 
     echo "APP_OPTS=$APP_OPTS"
 else

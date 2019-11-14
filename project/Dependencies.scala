@@ -68,6 +68,11 @@ object Dependencies {
     "eu.timepit" %% "refined" % "0.9.3"
   )
 
+  val test: Seq[ModuleID] = Seq(
+    "org.scalactic" %% "scalactic" % "3.0.8",
+    "org.scalatest" %% "scalatest" % "3.0.8" % "test"
+  )
+
   val flyway: ModuleID = "org.flywaydb" % "flyway-core" % "5.2.1"
   
   val hashing: ModuleID = "net.openhft" % "zero-allocation-hashing" % "0.8"
@@ -79,7 +84,8 @@ object Dependencies {
   val mongo: ModuleID = "org.mongodb.scala" %% "mongo-scala-driver" % "2.5.0"
   
   val nlp: ModuleID = "edu.stanford.nlp" % "stanford-corenlp" % "3.9.2"
-  
+
+
   val projectDeps: Seq[ModuleID] = 
-    logback ++ circe ++ finch ++ doobie ++ grpc ++ pureconfig ++ akka ++ cats ++ fs2 ++ math ++ refined :+ flyway :+ hashing :+ enumeratum :+ influx :+ mongo :+ nlp
+    test ++ logback ++ circe ++ finch ++ doobie ++ grpc ++ pureconfig ++ akka ++ cats ++ fs2 ++ math ++ refined :+ flyway :+ hashing :+ enumeratum :+ influx :+ mongo :+ nlp
 }

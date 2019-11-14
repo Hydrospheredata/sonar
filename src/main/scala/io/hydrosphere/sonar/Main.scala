@@ -61,12 +61,20 @@ object Dependencies {
       instance <- IO.delay(new BatchProfileServiceInterpreter(config, state, profileStorageService))
     } yield instance
   }
+
+  def alertManagerService(config: Configuration, modelDataService: ModelDataService[IO]): AlertManagerService[IO] = {
+    config.alerting match {
+      case Some(value) => AlertManagerService.prometheus[IO](value.alertManagerUrl, value.frontendUrl, modelDataService)
+      case None => AlertManagerService.noop[IO]()
+    }
+  }
+
 }
 
 object Main extends IOApp with Logging {
 
-  def createActorSystem[F[_]: Sync](config: Configuration, metricSpecService: MetricSpecService[IO], modelDataService: ModelDataService[IO], predictionService: PredictionService[IO], metricStorageService: MetricStorageService[IO], profileStorageService: ProfileStorageService[IO]): F[ActorSystem[SonarSupervisor.Message]] =
-    Sync[F].delay(ActorSystem[SonarSupervisor.Message](SonarSupervisor(config, metricSpecService, modelDataService, predictionService, metricStorageService, profileStorageService), "sonar"))
+  def createActorSystem[F[_]: Sync](config: Configuration, metricSpecService: MetricSpecService[IO], modelDataService: ModelDataService[IO], predictionService: PredictionService[IO], metricStorageService: MetricStorageService[IO], profileStorageService: ProfileStorageService[IO], alertManagerService: AlertManagerService[IO]): F[ActorSystem[SonarSupervisor.Message]] =
+    Sync[F].delay(ActorSystem[SonarSupervisor.Message](SonarSupervisor(config, metricSpecService, modelDataService, predictionService, metricStorageService, profileStorageService, alertManagerService), "sonar"))
 
   def runGrpcServer[F[_]: Sync](config: Configuration, monitoringService: MonitoringService): F[Server] = Sync[F].delay {
     val builder = BuilderWrapper(NettyServerBuilder.forPort(config.grpc.port).maxInboundMessageSize(config.grpc.maxSize))
@@ -103,10 +111,11 @@ object Main extends IOApp with Logging {
     batchProfileService <- Dependencies.batchProfileService(config, profileStorageService)
     httpService <- Dependencies.httpService[IO](metricSpecService, metricStorageService, profileStorageService, modelDataService, batchProfileService)
     predictionService <- Dependencies.predictionService[IO](config)
-    
+    amService = Dependencies.alertManagerService(config, modelDataService)
+
     _ <- runDbMigrations[IO](config)
     
-    actorSystem <- createActorSystem[IO](config, metricSpecService, modelDataService, predictionService, metricStorageService, profileStorageService)
+    actorSystem <- createActorSystem[IO](config, metricSpecService, modelDataService, predictionService, metricStorageService, profileStorageService, amService)
     
     grpc <- runGrpcServer[IO](config, new MonitoringServiceGrpcApi(actorSystem))
     _ <- IO(logger.info(s"GRPC server started on port ${grpc.getPort}"))
