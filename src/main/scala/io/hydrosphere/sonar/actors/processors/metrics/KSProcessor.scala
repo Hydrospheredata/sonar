@@ -24,10 +24,11 @@ object KSProcessor {
     Processor.MetricRequest(
       payload = ExecutionInformation(
         request = for {
-          r <- request.payload.request
-          observingInput <- r.inputs.get(inputField)
+          req <- request.payload.request
+          res <- request.payload.responseOrError.response
+          observingInput <- (req.inputs.get(inputField) ++ res.outputs.get(inputField)).headOption
         } yield PredictRequest(
-          modelSpec = r.modelSpec,
+          modelSpec = req.modelSpec,
           inputs = Map(inputField -> observingInput)
         ),
         metadata = request.payload.metadata,
