@@ -45,7 +45,9 @@ object AlertManagerService extends Logging {
   }
 
   def prometheus[F[_]](amUrl: String, baseUrl: String, modelDataService: ModelDataService[F])(implicit F: Async[F]): AlertManagerService[F] = {
-    val service = Http.client.newService(amUrl)
+    val service = Http.client
+      .withSessionQualifier.noFailFast
+      .newService(amUrl)
     val generatorUrl = metricGenUrl(baseUrl, modelDataService)
     new AlertManagerService[F] {
       override def sendMetric(metrics: Seq[Metric]): F[Unit] = {
