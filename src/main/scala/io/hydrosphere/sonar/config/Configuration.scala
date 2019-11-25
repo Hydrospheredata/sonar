@@ -7,5 +7,6 @@ case class Configuration(
   http: HttpConfiguration,
   sidecar: SidecarConfiguration,
   influx: InfluxConfiguration,
-  profile: ProfileConfiguration
+  profile: ProfileConfiguration,
+  alerting: Option[AlertingConfiguration]
 )

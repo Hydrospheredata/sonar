@@ -99,15 +99,23 @@ object Dependencies {
   }
 
   def checkStorageService[F[_]: Async](configuration: Configuration, client: MongoClient): F[CheckStorageService[F]] = for {
-//    state <- Ref.of[F, Seq[CheckStorageService.CheckedRequest]](Seq.empty)
+    //    state <- Ref.of[F, Seq[CheckStorageService.CheckedRequest]](Seq.empty)
     instance <- Async[F].delay(new MongoCheckStorageService[F](configuration, client))
   } yield instance
+
+  def alertManagerService(config: Configuration, modelDataService: ModelDataService[IO]): AlertManagerService[IO] = {
+    config.alerting match {
+      case Some(value) => AlertManagerService.prometheus[IO](value.alertManagerUrl, value.frontendUrl, modelDataService)
+      case None => AlertManagerService.noop[IO]()
+    }
+  }
+
 }
 
 object Main extends IOApp with Logging {
 
-  def createActorSystem[F[_]: Sync](config: Configuration, metricSpecService: MetricSpecService[IO], modelDataService: ModelDataService[IO], predictionService: PredictionService[IO], metricStorageService: MetricStorageService[IO], profileStorageService: ProfileStorageService[IO]): F[ActorSystem[SonarSupervisor.Message]] =
-    Sync[F].delay(ActorSystem[SonarSupervisor.Message](SonarSupervisor(config, metricSpecService, modelDataService, predictionService, metricStorageService, profileStorageService), "sonar"))
+  def createActorSystem[F[_]: Sync](config: Configuration, metricSpecService: MetricSpecService[IO], modelDataService: ModelDataService[IO], predictionService: PredictionService[IO], metricStorageService: MetricStorageService[IO], profileStorageService: ProfileStorageService[IO], alertManagerService: AlertManagerService[IO]): F[ActorSystem[SonarSupervisor.Message]] =
+    Sync[F].delay(ActorSystem[SonarSupervisor.Message](SonarSupervisor(config, metricSpecService, modelDataService, predictionService, metricStorageService, profileStorageService, alertManagerService), "sonar"))
 
   def discoveryActorSystem[F[_]: Sync](reconnect: FiniteDuration,stub: ServingDiscovery): F[ActorSystem[DiscoveryMsg]] = Sync[F].delay {
     ActorSystem[DiscoveryMsg](MetricSpecDiscoverer(reconnect, stub), "serving-discovery")
@@ -167,9 +175,11 @@ mongoClient <- Dependencies.mongoClient[IO](config)
     checkStorageService <- Dependencies.checkStorageService[IO](config, mongoClient)
     httpService <- Dependencies.httpService[IO](metricSpecService, metricStorageService, profileStorageService, modelDataService, batchProfileService, checkStorageService)
     predictionService <- Dependencies.predictionService[IO](gatewayRpc)
+    amService = Dependencies.alertManagerService(config, modelDataService)
+
     _ <- runDbMigrations[IO](config)
 
-    actorSystem <- createActorSystem[IO](config, metricSpecService, modelDataService, predictionService, metricStorageService, profileStorageService)
+    actorSystem <- createActorSystem[IO](config, metricSpecService, modelDataService, predictionService, metricStorageService, profileStorageService, amService)
 
     grpc <- runGrpcServer[IO](config, new MonitoringServiceGrpcApi(actorSystem, profileStorageService, metricSpecService, predictionService, checkStorageService, modelDataService))
     _ <- IO(logger.info(s"GRPC server started on port ${grpc.getPort}"))

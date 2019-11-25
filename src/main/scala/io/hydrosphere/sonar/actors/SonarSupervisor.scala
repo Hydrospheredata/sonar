@@ -38,10 +38,10 @@ object SonarSupervisor {
   private[actors] final case class MetricProcessorWasTerminated(actor: ActorRef[Processor.MetricMessage]) extends Message
   private[actors] final case class ProfileProcessorWasTerminated(actor: ActorRef[Processor.ProfileMessage]) extends Message
 
-  def apply(implicit config: Configuration, metricSpecService: MetricSpecService[IO], modelDataService: ModelDataService[IO], predictionService: PredictionService[IO], metricStorageService: MetricStorageService[IO], profileStorageService: ProfileStorageService[IO]): Behavior[Message] = Behaviors.setup[Message](context => new SonarSupervisor(context))
+  def apply(implicit config: Configuration, metricSpecService: MetricSpecService[IO], modelDataService: ModelDataService[IO], predictionService: PredictionService[IO], metricStorageService: MetricStorageService[IO], profileStorageService: ProfileStorageService[IO], alertManagerService: AlertManagerService[IO]): Behavior[Message] = Behaviors.setup[Message](context => new SonarSupervisor(context))
 }
 
-class SonarSupervisor(context: ActorContext[SonarSupervisor.Message])(implicit config: Configuration, metricSpecService: MetricSpecService[IO], modelDataService: ModelDataService[IO], predictionService: PredictionService[IO], metricStorageService: MetricStorageService[IO], profileStorageService: ProfileStorageService[IO]) extends AbstractBehavior[SonarSupervisor.Message] {
+class SonarSupervisor(context: ActorContext[SonarSupervisor.Message])(implicit config: Configuration, metricSpecService: MetricSpecService[IO], modelDataService: ModelDataService[IO], predictionService: PredictionService[IO], metricStorageService: MetricStorageService[IO], profileStorageService: ProfileStorageService[IO], alertManagerService: AlertManagerService[IO]) extends AbstractBehavior[SonarSupervisor.Message] {
   import Processable.implicits._
   import SonarSupervisor._
   import io.hydrosphere.sonar.utils.ProcessableMetricSpecs._
@@ -51,7 +51,7 @@ class SonarSupervisor(context: ActorContext[SonarSupervisor.Message])(implicit c
   private def createRestartableActor[T](behavior: Behavior[T], name: String): ActorRef[T] =
     context.spawn[T](Behaviors.supervise(behavior).onFailure(SupervisorStrategy.restart), name)
   
-  private lazy val metricWriter = createRestartableActor(MetricWriter(metricStorageService), "metric-writer")
+  private lazy val metricWriter = createRestartableActor(MetricWriter(metricStorageService, alertManagerService), "metric-writer")
   private lazy val profileWriter = createRestartableActor(ProfileWriter(profileStorageService), "profile-writer")
   
   private val metricChildren: ConcurrentHashMap[String, ActorRef[Processor.MetricMessage]] = new ConcurrentHashMap[String, ActorRef[Processor.MetricMessage]]
