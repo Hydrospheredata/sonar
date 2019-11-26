@@ -4,7 +4,7 @@ object Dependencies {
 
   val LogbackV = "1.2.3"
   val CirceV = "0.11.0"
-  val FinchV = "0.27.0"
+  val FinchV = "0.31.0"
   val DoobieV = "0.6.0"
   val PureConfigV = "0.10.1"
   val AkkaV = "2.5.19"
@@ -37,7 +37,7 @@ object Dependencies {
 
   val grpc: Seq[ModuleID] = Seq(
     "io.grpc" % "grpc-netty" % "1.18.0",
-    "io.hydrosphere" %% "serving-grpc-scala" % "2.0.4-preview"
+    "io.hydrosphere" %% "serving-grpc-scala" % "2.2.0"
   )
 
   val pureconfig: Seq[ModuleID] = Seq(

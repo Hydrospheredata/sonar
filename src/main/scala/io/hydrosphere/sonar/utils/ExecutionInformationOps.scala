@@ -1,6 +1,8 @@
 package io.hydrosphere.sonar.utils
 
 import io.hydrosphere.serving.monitoring.api.ExecutionInformation
+import io.hydrosphere.serving.monitoring.metadata.ExecutionError
+import io.hydrosphere.serving.tensorflow.api.predict.PredictResponse
 import io.hydrosphere.sonar.Logging
 import io.hydrosphere.sonar.utils.TensorProtoOps._
 
@@ -55,6 +57,13 @@ object ExecutionInformationOps extends Logging {
         case (None, Some(ts)) => ts
         case (None, None) => System.currentTimeMillis()
       }
+    }
+    
+    def eitherResponseOrError: Either[ExecutionError, PredictResponse] = {
+      if (ei.responseOrError.isError)
+        Left(ei.getError)
+      else
+        Right(ei.getResponse)
     }
   }
   

@@ -9,12 +9,16 @@ import cats.data.NonEmptyList
 import cats.effect._
 import cats.implicits._
 import com.twitter.finagle.Service
-import com.twitter.finagle.http.filter.Cors
+import com.twitter.finagle.http.filter.LogFormatter
+import com.twitter.util.Duration
+//import com.twitter.finagle.filter.LoggingFilter
+import com.twitter.finagle.http.filter.{CommonLogFormatter, Cors, LoggingFilter}
 import com.twitter.finagle.http.{Request, Response}
+import com.twitter.logging.Logger
 import fs2.{text, Stream => Fs2Stream}
 import fs2.io.file
 import io.circe.{Encoder, Json}
-import io.circe.parser.decode
+import io.circe.parser.{decode, parse}
 import io.circe.generic.extras.{Configuration => CirceExtraConfiguration}
 import io.circe.generic.extras.auto._
 import io.finch._
@@ -41,7 +45,8 @@ class HttpService[F[_] : Monad : Effect](
   metricStorageService: MetricStorageService[F], 
   profileStorageService: ProfileStorageService[F], 
   modelDataService: ModelDataService[F], 
-  batchProfileService: BatchProfileService[F, Fs2Stream]
+  batchProfileService: BatchProfileService[F, Fs2Stream],
+  checkStorageService: CheckStorageService[F]
 )(implicit cs: ContextShift[F]) extends Logging with Endpoint.Module[F] {
 
   implicit val genDevConfig: CirceExtraConfiguration =
@@ -66,14 +71,6 @@ class HttpService[F[_] : Monad : Effect](
     Ok("ok").pure[F]
   }
 
-  def createMetricSpec = post("monitoring" :: "metricspec" :: stringBody) { body: String =>
-    val metricSpec = decode[MetricSpec](body)
-    metricSpec match {
-      case Left(error) => throw error
-      case Right(value) => metricSpecService.createMetricSpec(value).map(Created)
-    }
-  }
-
   def getMetricSpecById = get("monitoring" :: "metricspec" :: path[String]) { id: String =>
     metricSpecService.getMetricSpecById(id).map(Ok)
   }
@@ -84,10 +81,6 @@ class HttpService[F[_] : Monad : Effect](
 
   def getAllMetricSpecs = get("monitoring" :: "metricspec") {
     metricSpecService.getAllMetricSpecs.map(Ok)
-  }
-  
-  def deleteMetricSpec = delete("monitoring" :: "metricspec" :: path[String]) { metricSpecId: String =>
-    metricSpecService.remove(metricSpecId).map(_ => Ok("ok"))
   }
 
   def getMetricsAggregation = get("monitoring"
@@ -175,7 +168,29 @@ class HttpService[F[_] : Monad : Effect](
     Ok(BuildInfo.value).pure[F]
   }
   
-  def endpoints = (getBuildInfo :+: healthCheck :+: createMetricSpec :+: getMetricSpecById :+: getAllMetricSpecs :+: getMetricSpecsByModelVersion :+: getMetricsAggregation :+: getMetricsRange :+: getMetrics :+: getProfiles :+: getProfileNames :+: batchProfile :+: getBatchStatus :+: deleteMetricSpec :+: s3BatchProfile) handle {
+  def getChecks = get("monitoring" :: "checks" :: path[Long] :: param[String]("from") :: param[String]("to")) { (modelVersionId: Long, from: String, to: String) =>
+    checkStorageService.getChecks(modelVersionId, from, to).map { jsonStrings => // TODO: ooph, dirty hacks
+      jsonStrings.map(jsonString =>
+        parse(jsonString) match {
+          case Left(value) => Json.Null
+          case Right(value) => value
+        }
+      )
+    }.map(Ok)
+  }
+
+  def getCheckAggregates = get("monitoring" :: "checks" :: "aggregates" :: path[Long] :: param[Int]("limit") :: param[Int]("offset")) { (modelVersionId: Long, limit: Int, offset: Int) =>
+    checkStorageService.getAggregates(modelVersionId, limit, offset).map { jsonStrings =>
+      jsonStrings.map(jsonString =>
+        parse(jsonString) match {
+          case Left(value) => Json.Null
+          case Right(value) => value
+        }
+      )
+    }.map(Ok)
+  }
+
+  def endpoints = (getChecks :+: getCheckAggregates :+: getBuildInfo :+: healthCheck :+: getMetricSpecById :+: getAllMetricSpecs :+: getMetricSpecsByModelVersion :+: getMetricsAggregation :+: getMetricsRange :+: getMetrics :+: getProfiles :+: getProfileNames :+: batchProfile :+: getBatchStatus :+: s3BatchProfile) handle {
     case e: io.finch.Error.NotParsed =>
       logger.warn(s"Can't parse json with message: ${e.getMessage()}")
       BadRequest(new RuntimeException(e))
