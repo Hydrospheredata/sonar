@@ -21,6 +21,7 @@ import org.bson.types.ObjectId
 import org.mongodb.scala.bson.{BsonArray, BsonBoolean, BsonDocument, BsonNull, BsonNumber, BsonObjectId, BsonString, BsonValue}
 import org.mongodb.scala.model.Filters._
 import org.mongodb.scala.model.UpdateOptions
+import org.mongodb.scala.model.Sorts._
 import org.mongodb.scala.{Document, MongoClient, MongoCollection, MongoDatabase}
 
 object CheckStorageService {
@@ -78,6 +79,7 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
   override def getAggregates(modelVersionId: Long, limit: Int, offset: Int): F[Seq[String]] = {
     aggregatedCheckCollection
       .find(equal("_hs_model_version_id", modelVersionId))
+      .sort(descending("_id"))
       .limit(limit)
       .skip(offset)
       .toFuture()
@@ -202,7 +204,7 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
       ("_id" -> objectId)
     val insertDocument = Document(bsonChecks)
     
-    val increments = maybeBsonChecks.map(_.aggregates).getOrElse(Seq.empty) :+ ("_hs_requests" -> BsonNumber(1))
+    val increments = maybeBsonChecks.map(_.aggregates).getOrElse(Seq.empty) ++ checks.getOrElse("overall", Seq.empty).map(check => Seq(s"_hs_metrics.${check.description}.checked" -> BsonNumber(1), s"_hs_metrics.${check.description}.passed" -> BsonNumber(check.check.toInt))).flatten :+ ("_hs_requests" -> BsonNumber(1))
     val aggregateQuery = Document(
       "$inc" -> increments,
       "$set" -> Document("_hs_last_id" -> objectId),
