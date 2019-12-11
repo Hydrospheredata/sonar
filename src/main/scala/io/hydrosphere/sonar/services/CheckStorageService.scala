@@ -163,7 +163,6 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
         s"${modelField.name}.checks" -> BsonNumber(fieldChecks.size), 
         s"${modelField.name}.passed" -> BsonNumber(fieldChecks.map(_.check.toInt).sum)
       )
-      logger.info(s"""${modelField.name} -> $bsonValue, _hs_${modelField.name}_score -> $bsonScore""")
       val checkValues = Seq(
         modelField.name -> bsonValue, 
         s"_hs_${modelField.name}_score" -> bsonScore
@@ -171,13 +170,9 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
       ByFieldChecks(checkValues, aggregates)
     }.foldLeft(ByFieldChecks(Seq.empty, Seq.empty))((a, b) => ByFieldChecks(a.checks ++ b.checks, a.aggregates ++ b.aggregates))
     val bsonLatency = ei.metadata.map(m => BsonNumber(m.latency)).getOrElse(BsonNull())
-    logger.info(s"""latency $bsonLatency""")
     val bsonError = ei.eitherResponseOrError.left.toOption.map(e => BsonString(e.errorMessage)).getOrElse(BsonNull())
-    logger.info(s"""error $bsonError""")
     val bsonScore = getScore(checks.values.flatten)
-    logger.info(s"""score $bsonScore""")
     val overallScore = getScore(checks.getOrElse("overall", Seq.empty))
-    logger.info(s"""overall $overallScore""")
     val objectId = BsonObjectId()
     
     val rawChecks = checks.map {

@@ -16,7 +16,6 @@ import io.hydrosphere.sonar.utils.checks.ProfileChecks
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
 
-// TODO: replace IO with F[_]
 class MonitoringServiceGrpcApi(recipient: ActorRef[SonarSupervisor.Message], profileStorageService: ProfileStorageService[IO], metricSpecService: MetricSpecService[IO], predictionService: PredictionService[IO], checkStorageService: CheckStorageService[IO], modelDataService: ModelDataService[IO]) extends MonitoringService with Logging {
   override def analyze(executionInformation: ExecutionInformation): Future[Empty] = {
     Future {
@@ -29,19 +28,14 @@ class MonitoringServiceGrpcApi(recipient: ActorRef[SonarSupervisor.Message], pro
         response <- executionInformation.responseOrError.response
         outputs = response.outputs
       } yield inputs ++ outputs
-      logger.info(s"got ${maybeRequest.getOrElse(Map.empty).keys.mkString(",")}")
       val effect = executionInformation.metadata match {
         case Some(md) =>
           for {
             modelVersion <- modelDataService.getModelVersion(md.modelVersionId)
-            _ = logger.info(s"${md.modelVersionId} got modelVersion")
             profiles <- profileStorageService.getProfiles(md.modelVersionId, ProfileSourceKind.Training)
-            _ = logger.info(s"${md.modelVersionId} got profiles")
             profileChecks = ProfileChecks.check(profiles, executionInformation)
-            _ = logger.info(s"${md.modelVersionId} computed checks")
             // TODO: get all metrics
             metricSpecs <- metricSpecService.getMetricSpecsByModelVersion(md.modelVersionId)
-            _ = logger.info(s"${md.modelVersionId} got metricspecs: ${metricSpecs}")
             // TODO: move to separated class
             metricChecks <- maybeRequest match {
               case Some(req) => metricSpecs.collect {
