@@ -42,8 +42,6 @@ dockerfile in docker := {
     label("RUNTIME_ID", "-30")
     label("SERVICE_NAME", "monitoring")
 
-    env("SIDECAR_PORT", "8081")
-    env("SIDECAR_HOST", "sidecar")
     env("KAFKA_HOST", "kafka")
     env("KAFKA_PORT", "9092")
     env("APP_PORT", "9091")

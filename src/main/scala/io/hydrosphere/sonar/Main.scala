@@ -2,6 +2,7 @@ package io.hydrosphere.sonar
 
 import java.util.concurrent.Executors
 
+import akka.actor.Scheduler
 import akka.actor.typed.ActorSystem
 import akka.util.Timeout
 import cats.effect._
@@ -15,12 +16,12 @@ import io.grpc.netty.NettyServerBuilder
 import io.grpc.{Channel, ClientInterceptors, ManagedChannelBuilder, Server}
 import io.hydrosphere.serving.discovery.serving.ServingDiscoveryGrpc
 import io.hydrosphere.serving.discovery.serving.ServingDiscoveryGrpc.ServingDiscovery
-import io.hydrosphere.serving.gateway.api.{GatewayServiceGrpc, ServablePredictRequest}
+//import io.hydrosphere.serving.gateway.api.{GatewayServiceGrpc, ServablePredictRequest}
 import io.hydrosphere.serving.grpc.{AuthorityReplacerInterceptor, BuilderWrapper, Headers}
 import io.hydrosphere.serving.manager.grpc.entities.ModelVersion
 import io.hydrosphere.serving.monitoring.api.MonitoringServiceGrpc
 import io.hydrosphere.serving.monitoring.api.MonitoringServiceGrpc.MonitoringService
-import io.hydrosphere.serving.tensorflow.api.predict.PredictResponse
+//import io.hydrosphere.serving.tensorflow.api.predict.PredictResponse
 import io.hydrosphere.sonar.actors.MetricSpecDiscoverer.DiscoveryMsg
 import io.hydrosphere.sonar.actors.{MetricSpecDiscoverer, SonarSupervisor}
 import io.hydrosphere.sonar.config.{Configuration, H2, Postgres}
@@ -66,12 +67,12 @@ object Dependencies {
   }
   
   def metricService[F[_]: Async](as: ActorSystem[DiscoveryMsg], timeout: Timeout): F[MetricSpecService[F]] = Async[F].delay {
-      implicit val scheduler = as.scheduler
-      implicit val t = timeout
+      implicit val scheduler: Scheduler = as.scheduler
+      implicit val t: Timeout = timeout
       new MetricSpecServiceInterpreter[F](as)
     }
 
-  def httpService[F[_]: Effect](metricSpecService: MetricSpecService[F], metricStorageService: MetricStorageService[F], profileStorageService: ProfileStorageService[F], modelDataService: ModelDataService[F], batchProfileService: BatchProfileService[F, fs2.Stream], checkStorageService: CheckStorageService[F])(implicit cs: ContextShift[F]): F[HttpService[F]] =
+  def httpService[F[_]: Effect](metricSpecService: MetricSpecService[F], metricStorageService: MetricStorageService[F], profileStorageService: ProfileStorageService[F], modelDataService: ModelDataService[F], batchProfileService: TrainingProfileService[F, fs2.Stream], checkStorageService: CheckStorageService[F])(implicit cs: ContextShift[F]): F[HttpService[F]] =
     Effect[F].delay(new HttpService[F](metricSpecService, metricStorageService, profileStorageService, modelDataService, batchProfileService, checkStorageService))
   
   def modelDataService[F[_]: Async](config: Configuration): F[ModelDataService[F]] = for {
@@ -90,11 +91,11 @@ object Dependencies {
     instance <- Async[F].delay(new ProfileStorageServiceMongoInterpreter[F](config, state, client))
   } yield instance
   
-  def batchProfileService(config: Configuration, profileStorageService: ProfileStorageService[IO]): IO[BatchProfileService[IO, fs2.Stream]] = {
+  def batchProfileService(config: Configuration, profileStorageService: ProfileStorageService[IO]): IO[TrainingProfileService[IO, fs2.Stream]] = {
     implicit val cs: ContextShift[IO] = IO.contextShift(ExecutionContext.fromExecutor(Executors.newFixedThreadPool(10)))
     for {
-      state <- Ref.of[IO, Map[Long, BatchProfileService.ProcessingStatus]](Map.empty)
-      instance <- IO.delay(new BatchProfileServiceInterpreter(config, state, profileStorageService))
+      state <- Ref.of[IO, Map[Long, TrainingProfileService.ProcessingStatus]](Map.empty)
+      instance <- IO.delay(new TrainingProfileServiceInterpreter(config, state, profileStorageService))
     } yield instance
   }
 
@@ -110,6 +111,10 @@ object Dependencies {
     }
   }
 
+  def writerService[F[_]: Async](configuration: Configuration, mongoClient: MongoClient, modelDataService: ModelDataService[IO], checkStorageService: CheckStorageService[IO]): F[BatchMetricService[F]] =
+    Async[F].delay{
+      new MongoParquetBatchMetricService[F](configuration, mongoClient, modelDataService, checkStorageService)
+    }
 }
 
 object Main extends IOApp with Logging {
@@ -176,6 +181,9 @@ mongoClient <- Dependencies.mongoClient[IO](config)
     httpService <- Dependencies.httpService[IO](metricSpecService, metricStorageService, profileStorageService, modelDataService, batchProfileService, checkStorageService)
     predictionService <- Dependencies.predictionService[IO](gatewayRpc)
     amService = Dependencies.alertManagerService(config, modelDataService)
+    writerService <- Dependencies.writerService[IO](config, mongoClient, modelDataService, checkStorageService)
+    
+    _ <- writerService.start
 
     _ <- runDbMigrations[IO](config)
 

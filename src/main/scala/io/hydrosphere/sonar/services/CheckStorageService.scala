@@ -22,6 +22,7 @@ import org.mongodb.scala.bson.{BsonArray, BsonBoolean, BsonDocument, BsonNull, B
 import org.mongodb.scala.model.Filters._
 import org.mongodb.scala.model.UpdateOptions
 import org.mongodb.scala.model.Sorts._
+import org.mongodb.scala.model.Updates._
 import org.mongodb.scala.{Document, MongoClient, MongoCollection, MongoDatabase}
 
 object CheckStorageService {
@@ -31,19 +32,12 @@ object CheckStorageService {
 trait CheckStorageService[F[_]] {
   def saveCheckedRequest(request: ExecutionInformation, modelVersion: ModelVersion, checks: Map[String, Seq[Check]]): F[Unit]
 
+  // TODO:  Map[String, Map[String, Map[String, Int]]] should be case class (maybe `Check`?)
+  def enrichAggregatesWithBatchChecks(nextAggregationId: String, checks: Map[String, Map[String, Map[String, Int]]]): F[Unit]
+  
   // TODO: can we make this better than returning json representation as a String?
   def getChecks(modelVersionId: Long, from: String, to: String): F[Seq[String]]
   def getAggregates(modelVersionId: Long, limit: Int, offset: Int): F[Seq[String]]
-}
-
-class InMemoryCheckStorageService[F[_]: Sync](state: Ref[F, Seq[CheckStorageService.CheckedRequest]]) extends CheckStorageService[F] {
-  override def saveCheckedRequest(request: ExecutionInformation, modelVersion: ModelVersion, checks: Map[String, Seq[Check]]): F[Unit] = for {
-    stored <- state.get
-    _ <- state.set(stored :+ (request, checks))
-  } yield Unit
-
-  override def getChecks(modelVersionId: Long, from: String, to: String): F[Seq[String]] = Sync[F].pure(Seq.empty)
-  override def getAggregates(modelVersionId: Long, limit: Int, offset: Int): F[Seq[String]] = Sync[F].pure(Seq.empty)
 }
 
 class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: MongoClient) extends CheckStorageService[F] with Logging {
@@ -62,6 +56,14 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
     
   }
 
+
+  override def enrichAggregatesWithBatchChecks(nextAggregationId: String, checks: Map[String, Map[String, Map[String, Int]]]): F[Unit] = {
+    aggregatedCheckCollection
+      .updateOne(lt("_id", new ObjectId(nextAggregationId)), set("_hs_batch", checks))
+      .toFuture()
+      .liftToAsync[F]
+      .map(_ => Unit)
+  }
 
   override def getChecks(modelVersionId: Long, from: String, to: String): F[Seq[String]] = {
     checkCollection

@@ -41,12 +41,12 @@ case class Test(i: Int, s: String = UUID.randomUUID().toString, r: Double = scal
 
 //noinspection TypeAnnotation
 class HttpService[F[_] : Monad : Effect](
-  metricSpecService: MetricSpecService[F], 
-  metricStorageService: MetricStorageService[F], 
-  profileStorageService: ProfileStorageService[F], 
-  modelDataService: ModelDataService[F], 
-  batchProfileService: BatchProfileService[F, Fs2Stream],
-  checkStorageService: CheckStorageService[F]
+                                          metricSpecService: MetricSpecService[F],
+                                          metricStorageService: MetricStorageService[F],
+                                          profileStorageService: ProfileStorageService[F],
+                                          modelDataService: ModelDataService[F],
+                                          batchProfileService: TrainingProfileService[F, Fs2Stream],
+                                          checkStorageService: CheckStorageService[F]
 )(implicit cs: ContextShift[F]) extends Logging with Endpoint.Module[F] {
 
   implicit val genDevConfig: CirceExtraConfiguration =

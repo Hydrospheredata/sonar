@@ -85,7 +85,8 @@ object Dependencies {
   
   val nlp: ModuleID = "edu.stanford.nlp" % "stanford-corenlp" % "3.9.2"
 
+  val kite: ModuleID = "org.kitesdk" % "kite-data-core" % "1.1.0"
 
   val projectDeps: Seq[ModuleID] = 
-    test ++ logback ++ circe ++ finch ++ doobie ++ grpc ++ pureconfig ++ akka ++ cats ++ fs2 ++ math ++ refined :+ flyway :+ hashing :+ enumeratum :+ influx :+ mongo :+ nlp
+    test ++ logback ++ circe ++ finch ++ doobie ++ grpc ++ pureconfig ++ akka ++ cats ++ fs2 ++ math ++ refined :+ flyway :+ hashing :+ enumeratum :+ influx :+ mongo :+ nlp :+ kite
 }

@@ -92,15 +92,15 @@ class SonarSupervisor(context: ActorContext[SonarSupervisor.Message])(implicit c
           val modelVersionId = metadata.modelVersionId
           // Concept drift metrics
           // Each MetricSpec *must* have an appropriate processor
-          metricSpecService.getMetricSpecsByModelVersion(modelVersionId).unsafeRunAsync {
-            case Right(metricSpecs) => 
-              metricSpecs
-                /*_*/
-                .map(spec => getOrCreateMetricActor(processor(spec), s"${spec.id}-${spec.modelVersionId}"))
-                /*_*/
-                .foreach(_ ! Processor.MetricRequest(payload, metricWriter))
-            case Left(exc) => context.log.error(exc, s"Error while getting MetricSpecs")
-          }
+//          metricSpecService.getMetricSpecsByModelVersion(modelVersionId).unsafeRunAsync {
+//            case Right(metricSpecs) => 
+//              metricSpecs
+//                /*_*/
+//                .map(spec => getOrCreateMetricActor(processor(spec), s"${spec.id}-${spec.modelVersionId}"))
+//                /*_*/
+//                .foreach(_ ! Processor.MetricRequest(payload, metricWriter))
+//            case Left(exc) => context.log.error(exc, s"Error while getting MetricSpecs")
+//          }
           
           // Data profiles
           // Each DataProfileType *can* have a processor, otherwise it will be ignored

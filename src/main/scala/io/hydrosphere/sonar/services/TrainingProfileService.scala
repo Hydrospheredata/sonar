@@ -18,7 +18,8 @@ import io.hydrosphere.sonar.Logging
 import io.hydrosphere.sonar.config.Configuration
 import io.hydrosphere.sonar.terms.ProfileSourceKind
 import io.hydrosphere.sonar.utils.profiles.NumericalProfileUtils
-import io.hydrosphere.sonar.utils.{CollectionOps, ContractOps, CsvRowSizeMismatch, ProfileIsAlreadyProcessing}
+import io.hydrosphere.sonar.utils.{CollectionOps, CsvRowSizeMismatch, ProfileIsAlreadyProcessing}
+import io.hydrosphere.sonar.utils.ContractOps._
 
 import scala.collection.immutable
 import scala.collection.JavaConverters._
@@ -26,13 +27,13 @@ import scala.concurrent.ExecutionContext
 import scala.util.Try
 import scala.util.control.Exception
 
-trait BatchProfileService[F[_], S[_[_], _]] {
+trait TrainingProfileService[F[_], S[_[_], _]] {
   def batchCsvProcess(path: String, modelVersion: ModelVersion): F[Unit]
   
-  def getProcessingStatus(modelVersionId: Long): F[BatchProfileService.ProcessingStatus]
+  def getProcessingStatus(modelVersionId: Long): F[TrainingProfileService.ProcessingStatus]
 }
 
-object BatchProfileService {
+object TrainingProfileService {
   sealed trait ProcessingStatus extends EnumEntry
 
   object ProcessingStatus extends Enum[ProcessingStatus] {
@@ -44,8 +45,8 @@ object BatchProfileService {
   }
 }
 
-class BatchProfileServiceInterpreter(config: Configuration, state: Ref[IO, Map[Long, BatchProfileService.ProcessingStatus]], profileStorageService: ProfileStorageService[IO])(implicit cs: ContextShift[IO]) extends BatchProfileService[IO, fs2.Stream] with Logging {
-  import BatchProfileService._
+class TrainingProfileServiceInterpreter(config: Configuration, state: Ref[IO, Map[Long, TrainingProfileService.ProcessingStatus]], profileStorageService: ProfileStorageService[IO])(implicit cs: ContextShift[IO]) extends TrainingProfileService[IO, fs2.Stream] with Logging {
+  import TrainingProfileService._
 
 //  trait S3Client[F[_]] {
 //    private lazy val client = AmazonS3ClientBuilder.defaultClient
@@ -152,7 +153,7 @@ class BatchProfileServiceInterpreter(config: Configuration, state: Ref[IO, Map[L
       )
       .map(_.getOrElse(Map.empty))
       .map(_.filterKeys(key => modelVersion.contract
-        .map(ContractOps.extractProfiledFields)
+        .map(_.extractProfiledFields)
         .getOrElse(Seq.empty)
         .exists(_.name == key)
       ))
@@ -160,7 +161,7 @@ class BatchProfileServiceInterpreter(config: Configuration, state: Ref[IO, Map[L
       .chunkN(100)
       .flatMap(mapRows => {
         val numericalFields = modelVersion.contract
-          .map(ContractOps.extractAllFields)
+          .map(_.extractAllFields)
           .getOrElse(Seq.empty)
           .filter(_.profile == DataProfileType.NUMERICAL)
           .map(_.name)
@@ -199,5 +200,5 @@ class BatchProfileServiceInterpreter(config: Configuration, state: Ref[IO, Map[L
   } yield Unit
 
   override def getProcessingStatus(modelVersionId: Long): IO[ProcessingStatus] =
-    state.get.map(_.getOrElse(modelVersionId, BatchProfileService.ProcessingStatus.NotRegistered))
+    state.get.map(_.getOrElse(modelVersionId, TrainingProfileService.ProcessingStatus.NotRegistered))
 }
