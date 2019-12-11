@@ -19,9 +19,9 @@ import io.hydrosphere.sonar.utils.TensorProtoOps._
 import org.bson.json.{JsonWriterSettings, StrictJsonWriter}
 import org.bson.types.ObjectId
 import org.mongodb.scala.bson.{BsonArray, BsonBoolean, BsonDocument, BsonNull, BsonNumber, BsonObjectId, BsonString, BsonValue}
-import org.mongodb.scala.model.Filters._
+import org.mongodb.scala.model.Filters.{lt, _}
 import org.mongodb.scala.model.UpdateOptions
-import org.mongodb.scala.model.Sorts._
+import org.mongodb.scala.model.Sorts.{descending, _}
 import org.mongodb.scala.model.Updates._
 import org.mongodb.scala.{Document, MongoClient, MongoCollection, MongoDatabase}
 
@@ -58,11 +58,26 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
 
 
   override def enrichAggregatesWithBatchChecks(nextAggregationId: String, checks: Map[String, Map[String, Map[String, Int]]]): F[Unit] = {
-    aggregatedCheckCollection
-      .updateOne(lt("_id", new ObjectId(nextAggregationId)), set("_hs_batch", checks))
-      .toFuture()
-      .liftToAsync[F]
-      .map(_ => Unit)
+    logger.info(s"Enrich aggregation for $nextAggregationId")
+    logger.info(s"$checks")
+    for {
+      aggregates <- aggregatedCheckCollection
+                      .find(lt("_id", new ObjectId(nextAggregationId)))
+                      .sort(descending("_id"))
+                      .limit(1)
+                      .toFuture()
+                      .liftToAsync[F]
+      previousId = aggregates.headOption.map(_.getObjectId("_id").toHexString)
+      _ = logger.info(s"updating ${previousId}")
+      _ <- previousId match {
+        case Some(id) => aggregatedCheckCollection
+                            .updateOne(equal("_id", new ObjectId(id)), set("_hs_batch", checks))
+                            .toFuture()
+                            .liftToAsync[F]
+                            .map(r => logger.info(r.toString))
+        case None => Async[F].unit
+      }  
+    } yield Unit
   }
 
   override def getChecks(modelVersionId: Long, from: String, to: String): F[Seq[String]] = {
