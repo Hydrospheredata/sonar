@@ -31,6 +31,8 @@ object CheckStorageService {
 
 trait CheckStorageService[F[_]] {
   def saveCheckedRequest(request: ExecutionInformation, modelVersion: ModelVersion, checks: Map[String, Seq[Check]]): F[Unit]
+  
+  def getAggregateCount(modelVersionId: Long): F[Long]
 
   // TODO:  Map[String, Map[String, Map[String, Int]]] should be case class (maybe `Check`?)
   def enrichAggregatesWithBatchChecks(nextAggregationId: String, checks: Map[String, Map[String, Map[String, Int]]]): F[Unit]
@@ -56,6 +58,13 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
     
   }
 
+
+  override def getAggregateCount(modelVersionId: Long): F[Long] = {
+    aggregatedCheckCollection
+      .countDocuments()
+      .toFuture()
+      .liftToAsync[F]
+  }
 
   override def enrichAggregatesWithBatchChecks(nextAggregationId: String, checks: Map[String, Map[String, Map[String, Int]]]): F[Unit] = {
     logger.info(s"Enrich aggregation for $nextAggregationId")

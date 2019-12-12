@@ -180,14 +180,18 @@ class HttpService[F[_] : Monad : Effect](
   }
 
   def getCheckAggregates = get("monitoring" :: "checks" :: "aggregates" :: path[Long] :: param[Int]("limit") :: param[Int]("offset")) { (modelVersionId: Long, limit: Int, offset: Int) =>
-    checkStorageService.getAggregates(modelVersionId, limit, offset).map { jsonStrings =>
-      jsonStrings.map(jsonString =>
+    val program = for {
+      count <- checkStorageService.getAggregateCount(modelVersionId)
+      jsonStrings <- checkStorageService.getAggregates(modelVersionId, limit, offset)
+      jsons = jsonStrings.map((jsonString: String) =>
         parse(jsonString) match {
           case Left(value) => Json.Null
           case Right(value) => value
         }
       )
-    }.map(Ok)
+    } yield Json.obj("count" -> Json.fromLong(count), "results" -> Json.arr(jsons: _*))
+    
+    program.map(Ok _)
   }
 
   def endpoints = (getChecks :+: getCheckAggregates :+: getBuildInfo :+: healthCheck :+: getMetricSpecById :+: getAllMetricSpecs :+: getMetricSpecsByModelVersion :+: getMetricsAggregation :+: getMetricsRange :+: getMetrics :+: getProfiles :+: getProfileNames :+: batchProfile :+: getBatchStatus :+: s3BatchProfile) handle {
