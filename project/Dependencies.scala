@@ -70,7 +70,8 @@ object Dependencies {
 
   val test: Seq[ModuleID] = Seq(
     "org.scalactic" %% "scalactic" % "3.0.8",
-    "org.scalatest" %% "scalatest" % "3.0.8" % "test"
+    "org.scalatest" %% "scalatest" % "3.0.8" % "test",
+    "com.typesafe.akka" %% "akka-actor-testkit-typed" % AkkaV % Test
   )
 
   val flyway: ModuleID = "org.flywaydb" % "flyway-core" % "5.2.1"
