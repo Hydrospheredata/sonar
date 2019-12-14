@@ -161,7 +161,7 @@ class MongoParquetBatchMetricService[F[_]: Async](config: Configuration, mongoCl
       .endRecord().noDefault()
       .endRecord().noDefault()
     
-    rootBuilder = rawChecksBuilder
+    rootBuilder = rawChecksBuilder.endRecord().noDefault()
     
     rootBuilder.endRecord()
   } 
