@@ -45,24 +45,24 @@ class MonitoringServiceGrpcApi(recipient: ActorRef[SonarSupervisor.Message], pro
                     .flatMap { predictResponse =>
                       val value = predictResponse.outputs.get("value").flatMap(_.doubleVal.headOption).getOrElse(0d)
                       config.thresholdCmpOperator match {
-                        case Some(cmpOperator) => IO.pure[Check](cmpOperator match {
+                        case Some(cmpOperator) => IO.pure[(String, Check)](name -> (cmpOperator match {
                           case Eq => Check(value == config.threshold.getOrElse(Double.MaxValue), name, value, config.threshold.getOrElse(Double.MaxValue), Some(id))
                           case NotEq => Check(value != config.threshold.getOrElse(Double.MaxValue), name, value, config.threshold.getOrElse(Double.MaxValue), Some(id))
                           case Greater => Check(value > config.threshold.getOrElse(Double.MaxValue), name, value, config.threshold.getOrElse(Double.MaxValue), Some(id))
                           case Less => Check(value < config.threshold.getOrElse(Double.MinValue), name, value, config.threshold.getOrElse(Double.MinValue), Some(id))
                           case GreaterEq => Check(value >= config.threshold.getOrElse(Double.MaxValue), name, value, config.threshold.getOrElse(Double.MaxValue), Some(id))
                           case LessEq => Check(value <= config.threshold.getOrElse(Double.MinValue), name, value, config.threshold.getOrElse(Double.MinValue), Some(id))
-                        })
-                        case None => IO.raiseError[Check](new RuntimeException(s"${md.modelVersionId} cmpOperator is empty"))
+                        }))
+                        case None => IO.raiseError[(String, Check)](new RuntimeException(s"${md.modelVersionId} cmpOperator is empty"))
                       }
                     }
                     .attempt
               }
                 // TODO: process errors
-                .sequence.map(_.filter(_.isRight).map(_.right.get))
-              case None => IO.pure(Seq.empty)
+                .sequence.map(_.filter(_.isRight).map(_.right.get).toMap[String, Check])
+              case None => IO.pure(Map.empty[String, Check])
             }
-            _ <- checkStorageService.saveCheckedRequest(executionInformation, modelVersion, profileChecks + ("overall" -> metricChecks))
+            _ <- checkStorageService.saveCheckedRequest(executionInformation, modelVersion, profileChecks + ("_hs_metrics" -> metricChecks))
           } yield Unit
         case None => IO.unit // TODO: do something 
       }

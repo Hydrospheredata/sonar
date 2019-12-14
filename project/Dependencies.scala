@@ -8,6 +8,8 @@ object Dependencies {
   val DoobieV = "0.6.0"
   val PureConfigV = "0.10.1"
   val AkkaV = "2.5.19"
+  val HadoopV = "3.2.1"
+  val ParquetV = "1.11.0"
 
   val logback: Seq[ModuleID] = Seq(
     "ch.qos.logback" % "logback-classic" % LogbackV,
@@ -87,7 +89,19 @@ object Dependencies {
   val nlp: ModuleID = "edu.stanford.nlp" % "stanford-corenlp" % "3.9.2"
 
   val kite: ModuleID = "org.kitesdk" % "kite-data-core" % "1.1.0"
+  
+  val hadoop: Seq[ModuleID] = Seq(
+    "org.apache.hadoop" % "hadoop-common" % HadoopV,
+    "org.apache.hadoop" % "hadoop-aws" % HadoopV
+  )
+  
+  val parquet: Seq[ModuleID] = Seq(
+    "org.apache.parquet" % "parquet-common" % ParquetV,
+    "org.apache.parquet" % "parquet-encoding" % ParquetV,
+    "org.apache.parquet" % "parquet-avro" % ParquetV
+  )
 
   val projectDeps: Seq[ModuleID] = 
-    test ++ logback ++ circe ++ finch ++ doobie ++ grpc ++ pureconfig ++ akka ++ cats ++ fs2 ++ math ++ refined :+ flyway :+ hashing :+ enumeratum :+ influx :+ mongo :+ nlp :+ kite
+    test ++ logback ++ circe ++ finch ++ doobie ++ grpc ++ pureconfig ++ akka ++ cats ++ fs2 ++ math ++ refined ++ hadoop ++ parquet :+ 
+      flyway :+ hashing :+ enumeratum :+ influx :+ mongo :+ nlp :+ kite
 }

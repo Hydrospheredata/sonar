@@ -30,7 +30,7 @@ object CheckStorageService {
 }
 
 trait CheckStorageService[F[_]] {
-  def saveCheckedRequest(request: ExecutionInformation, modelVersion: ModelVersion, checks: Map[String, Seq[Check]]): F[Unit]
+  def saveCheckedRequest(request: ExecutionInformation, modelVersion: ModelVersion, checks: Map[String, Map[String, Check]]): F[Unit]
   
   def getAggregateCount(modelVersionId: Long): F[Long]
 
@@ -118,7 +118,7 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
       )))
   }
 
-  override def saveCheckedRequest(ei: ExecutionInformation, modelVersion: ModelVersion, checks: Map[String, Seq[Check]]): F[Unit] = {
+  override def saveCheckedRequest(ei: ExecutionInformation, modelVersion: ModelVersion, checks: Map[String, Map[String, Check]]): F[Unit] = {
     logger.info(s"${modelVersion.id} saveCheckedRequest with ${checks.size} checks")
     case class ByFieldChecks(checks: Seq[(String, BsonValue)], aggregates: Seq[(String, BsonValue)])
     
@@ -181,11 +181,11 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
         case Left(_) => BsonNull() // TODO: process subfields
         case Right(_) => data.get(modelField.name).map(tensorDataToBson).getOrElse(BsonNull())
       }
-      val fieldChecks = checks.getOrElse(modelField.name, Seq.empty)
-      val bsonScore = getScore(fieldChecks)
+      val fieldChecks = checks.getOrElse(modelField.name, Map.empty)
+      val bsonScore = getScore(fieldChecks.values)
       val aggregates = Seq(
         s"${modelField.name}.checks" -> BsonNumber(fieldChecks.size), 
-        s"${modelField.name}.passed" -> BsonNumber(fieldChecks.map(_.check.toInt).sum)
+        s"${modelField.name}.passed" -> BsonNumber(fieldChecks.values.map(_.check.toInt).sum)
       )
       val checkValues = Seq(
         modelField.name -> bsonValue, 
@@ -195,14 +195,14 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
     }.foldLeft(ByFieldChecks(Seq.empty, Seq.empty))((a, b) => ByFieldChecks(a.checks ++ b.checks, a.aggregates ++ b.aggregates))
     val bsonLatency = ei.metadata.map(m => BsonNumber(m.latency)).getOrElse(BsonNull())
     val bsonError = ei.eitherResponseOrError.left.toOption.map(e => BsonString(e.errorMessage)).getOrElse(BsonNull())
-    val bsonScore = getScore(checks.values.flatten)
-    val overallScore = getScore(checks.getOrElse("overall", Seq.empty))
+    val bsonScore = getScore(checks.values.flatMap(_.values))
+    val overallScore = getScore(checks.getOrElse("overall", Map.empty).values)
     val objectId = BsonObjectId()
     
     val rawChecks = checks.map {
-      case (field, checkList) => 
-        field -> BsonArray(checkList.flatMap(check => {
-          Seq(
+      case (field, checkMap) => 
+        field -> BsonDocument(checkMap.mapValues(check => {
+          BsonDocument(
             "check" -> BsonBoolean(check.check),
             "description" -> BsonString(check.description),
             "threshold" -> BsonNumber(check.threshold),
@@ -210,10 +210,19 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
             "metricSpecId" -> check.metricSpecId.map(BsonString.apply).getOrElse(BsonNull())
           )
         }))
+//        field -> BsonDocument(checkMap.flatMap({case (name, check) => {
+//          Seq(name -> Map(
+//            "check" -> BsonBoolean(check.check),
+//            "description" -> BsonString(check.description),
+//            "threshold" -> BsonNumber(check.threshold),
+//            "value" -> BsonNumber(check.value),
+//            "metricSpecId" -> check.metricSpecId.map(BsonString.apply).getOrElse(BsonNull())
+//          ))
+//        }}))
     }
     
     val bsonChecks = maybeBsonChecks.map(_.checks).getOrElse(Seq.empty) :+ 
-      ("_hs_raw_checks" -> BsonDocument(rawChecks.toSeq)) :+
+      ("_hs_raw_checks" -> BsonDocument(rawChecks.toMap)) :+
       ("_hs_latency" -> bsonLatency) :+
       ("_hs_error" -> bsonError) :+
       ("_hs_score" -> bsonScore) :+
@@ -225,7 +234,7 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
       ("_id" -> objectId)
     val insertDocument = Document(bsonChecks)
     
-    val increments = maybeBsonChecks.map(_.aggregates).getOrElse(Seq.empty) ++ checks.getOrElse("overall", Seq.empty).map(check => Seq(s"_hs_metrics.${check.description}.checked" -> BsonNumber(1), s"_hs_metrics.${check.description}.passed" -> BsonNumber(check.check.toInt))).flatten :+ ("_hs_requests" -> BsonNumber(1))
+    val increments = maybeBsonChecks.map(_.aggregates).getOrElse(Seq.empty) ++ checks.getOrElse("overall", Seq.empty).flatMap(check => Seq(s"_hs_metrics.${check._2.description}.checked" -> BsonNumber(1), s"_hs_metrics.${check._2.description}.passed" -> BsonNumber(check._2.check.toInt))) :+ ("_hs_requests" -> BsonNumber(1))
     val aggregateQuery = Document(
       "$inc" -> increments,
       "$set" -> Document("_hs_last_id" -> objectId),
