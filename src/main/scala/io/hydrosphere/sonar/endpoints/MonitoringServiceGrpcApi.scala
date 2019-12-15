@@ -4,12 +4,14 @@ import akka.actor.typed.ActorRef
 import cats.effect.IO
 import cats.implicits._
 import com.google.protobuf.empty.Empty
+import io.hydrosphere.serving.manager.grpc.entities.MetricSpec
+import io.hydrosphere.serving.manager.grpc.entities.ThresholdConfig.CmpOp._
 import io.hydrosphere.serving.monitoring.api.ExecutionInformation
 import io.hydrosphere.serving.monitoring.api.MonitoringServiceGrpc.MonitoringService
 import io.hydrosphere.sonar.Logging
 import io.hydrosphere.sonar.actors.SonarSupervisor
 import io.hydrosphere.sonar.services.{CheckStorageService, MetricSpecService, ModelDataService, PredictionService, ProfileStorageService}
-import io.hydrosphere.sonar.terms.{Check, CustomModelMetricSpec, Eq, Greater, GreaterEq, Less, LessEq, NotEq, ProfileSourceKind}
+import io.hydrosphere.sonar.terms.{Check, ProfileSourceKind}
 import io.hydrosphere.sonar.utils.ExecutionInformationOps._
 import io.hydrosphere.sonar.utils.checks.ProfileChecks
 
@@ -39,19 +41,21 @@ class MonitoringServiceGrpcApi(recipient: ActorRef[SonarSupervisor.Message], pro
             // TODO: move to separated class
             metricChecks <- maybeRequest match {
               case Some(req) => metricSpecs.collect {
-                case CustomModelMetricSpec(name, modelVersionId, config, withHealth, id) =>
+                case MetricSpec(id, name, _, config) =>
                   predictionService
-                    .predict(config.servableName, req)
+                    // TODO: unsafe Option.get
+                    .predict(config.get.servable.get.name, req)
                     .flatMap { predictResponse =>
                       val value = predictResponse.outputs.get("value").flatMap(_.doubleVal.headOption).getOrElse(0d)
-                      config.thresholdCmpOperator match {
-                        case Some(cmpOperator) => IO.pure[(String, Check)](name -> (cmpOperator match {
-                          case Eq => Check(value == config.threshold.getOrElse(Double.MaxValue), name, value, config.threshold.getOrElse(Double.MaxValue), Some(id))
-                          case NotEq => Check(value != config.threshold.getOrElse(Double.MaxValue), name, value, config.threshold.getOrElse(Double.MaxValue), Some(id))
-                          case Greater => Check(value > config.threshold.getOrElse(Double.MaxValue), name, value, config.threshold.getOrElse(Double.MaxValue), Some(id))
-                          case Less => Check(value < config.threshold.getOrElse(Double.MinValue), name, value, config.threshold.getOrElse(Double.MinValue), Some(id))
-                          case GreaterEq => Check(value >= config.threshold.getOrElse(Double.MaxValue), name, value, config.threshold.getOrElse(Double.MaxValue), Some(id))
-                          case LessEq => Check(value <= config.threshold.getOrElse(Double.MinValue), name, value, config.threshold.getOrElse(Double.MinValue), Some(id))
+                      config.get.threshold match {
+                        case Some(thresholdConfig) => IO.pure[(String, Check)](name -> (thresholdConfig.comparison match {
+                          case EQ => Check(value == thresholdConfig.value, name, value, thresholdConfig.value, Some(id))
+                          case NOT_EQ => Check(value != thresholdConfig.value, name, value, thresholdConfig.value, Some(id))
+                          case GREATER => Check(value > thresholdConfig.value, name, value, thresholdConfig.value, Some(id))
+                          case LESS => Check(value < thresholdConfig.value, name, value, thresholdConfig.value, Some(id))
+                          case GREATER_EQ => Check(value >= thresholdConfig.value, name, value, thresholdConfig.value, Some(id))
+                          case LESS_EQ => Check(value <= thresholdConfig.value, name, value, thresholdConfig.value, Some(id))
+                          case Unrecognized(value) => throw new RuntimeException(s"Unrecognized cmp operator $value")
                         }))
                         case None => IO.raiseError[(String, Check)](new RuntimeException(s"${md.modelVersionId} cmpOperator is empty"))
                       }

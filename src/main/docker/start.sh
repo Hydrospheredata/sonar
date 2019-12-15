@@ -6,11 +6,6 @@ APP_OPTS=""
 
 [ -z "$JAVA_XMX" ] && JAVA_XMX="1024M"
 
-[[ -z "$DB_TYPE" ]] && DB_TYPE="h2"
-[[ -z "$DB_JDBC_URL" ]] && DB_JDBC_URL="jdbc:h2:file:./target/db.h2;DB_CLOSE_DELAY=-1;INIT=create domain if not exists json as other;"
-[[ -z "$DB_USER" ]] && DB_USER="sa"
-[[ -z "$DB_PASS" ]] && DB_PASS=""
-
 [[ -z "$GRPC_PORT" ]] && GRPC_PORT="9090"
 [[ -z "$GRPC_MAX_SIZE" ]] && GRPC_MAX_SIZE="52428800"
 
@@ -39,7 +34,6 @@ JAVA_OPTS="-Xmx$JAVA_XMX -Xms$JAVA_XMX"
 if [[ "$CUSTOM_CONFIG" = "" ]]
 then
     echo "Custom config does not exist"
-    APP_OPTS="$APP_OPTS -Ddb.type=$DB_TYPE -Ddb.jdbc-url=$DB_JDBC_URL -Ddb.user=$DB_USER -Ddb.pass=$DB_PASS"
     APP_OPTS="$APP_OPTS -Dgrpc.port=$GRPC_PORT -Dgrpc.max-size=$GRPC_MAX_SIZE"
     APP_OPTS="$APP_OPTS -Dhttp.host=$HTTP_HOST -Dhttp.port=$HTTP_PORT"
     APP_OPTS="$APP_OPTS -Dinflux.host=$INFLUX_HOST -Dinflux.port=$INFLUX_PORT -Dinflux.database=$INFLUX_DATABASE"

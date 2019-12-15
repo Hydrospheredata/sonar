@@ -6,10 +6,9 @@ import cats.effect.IO
 import io.hydrosphere.serving.manager.data_profile_types.DataProfileType
 import io.hydrosphere.serving.monitoring.api.ExecutionInformation
 import io.hydrosphere.sonar.actors.processors.profiles.{NumericalProfileProcessor, TextProfileProcessor}
-import io.hydrosphere.sonar.actors.writers.{MetricWriter, ProfileWriter}
+import io.hydrosphere.sonar.actors.writers.ProfileWriter
 import io.hydrosphere.sonar.config.Configuration
 import io.hydrosphere.sonar.services._
-import io.hydrosphere.sonar.terms.{MetricSpec, Processable}
 import java.util.concurrent.ConcurrentHashMap
 
 import scala.concurrent.duration._
@@ -33,45 +32,23 @@ object SonarSupervisor {
   
   sealed trait Message
   final case class Request(payload: ExecutionInformation) extends Message
-  final case class AddProcessor(metricSpec: MetricSpec) extends Message
-  final case class RemoveProcessor(metricSpecId: String) extends Message
-  private[actors] final case class MetricProcessorWasTerminated(actor: ActorRef[Processor.MetricMessage]) extends Message
   private[actors] final case class ProfileProcessorWasTerminated(actor: ActorRef[Processor.ProfileMessage]) extends Message
 
-  def apply(implicit config: Configuration, metricSpecService: MetricSpecService[IO], modelDataService: ModelDataService[IO], predictionService: PredictionService[IO], metricStorageService: MetricStorageService[IO], profileStorageService: ProfileStorageService[IO], alertManagerService: AlertManagerService[IO]): Behavior[Message] = Behaviors.setup[Message](context => new SonarSupervisor(context))
+  def apply(implicit config: Configuration, metricSpecService: MetricSpecService[IO], modelDataService: ModelDataService[IO], predictionService: PredictionService[IO], profileStorageService: ProfileStorageService[IO]/*, alertManagerService: AlertManagerService[IO]*/): Behavior[Message] = Behaviors.setup[Message](context => new SonarSupervisor(context))
 }
 
-class SonarSupervisor(context: ActorContext[SonarSupervisor.Message])(implicit config: Configuration, metricSpecService: MetricSpecService[IO], modelDataService: ModelDataService[IO], predictionService: PredictionService[IO], metricStorageService: MetricStorageService[IO], profileStorageService: ProfileStorageService[IO], alertManagerService: AlertManagerService[IO]) extends AbstractBehavior[SonarSupervisor.Message] {
-  import Processable.implicits._
+class SonarSupervisor(context: ActorContext[SonarSupervisor.Message])(implicit config: Configuration, metricSpecService: MetricSpecService[IO], modelDataService: ModelDataService[IO], predictionService: PredictionService[IO], profileStorageService: ProfileStorageService[IO]/*, alertManagerService: AlertManagerService[IO]*/) extends AbstractBehavior[SonarSupervisor.Message] {
   import SonarSupervisor._
-  import io.hydrosphere.sonar.utils.ProcessableMetricSpecs._
-
   context.log.info("SonarSupervisor actor was started")
   
   private def createRestartableActor[T](behavior: Behavior[T], name: String): ActorRef[T] =
     context.spawn[T](Behaviors.supervise(behavior).onFailure(SupervisorStrategy.restart), name)
   
-  private lazy val metricWriter = createRestartableActor(MetricWriter(metricStorageService, alertManagerService), "metric-writer")
   private lazy val profileWriter = createRestartableActor(ProfileWriter(profileStorageService), "profile-writer")
   
-  private val metricChildren: ConcurrentHashMap[String, ActorRef[Processor.MetricMessage]] = new ConcurrentHashMap[String, ActorRef[Processor.MetricMessage]]
   private val profileChildren: ConcurrentHashMap[(Long, DataProfileType), ActorRef[Processor.ProfileMessage]] = new ConcurrentHashMap[(Long, DataProfileType), ActorRef[Processor.ProfileMessage]]
   
   private val textProfileProcessor: TextProfileProcessor = new TextProfileProcessor(config)
-
-  private def processor[T: Processable](metricSpec: T): Behavior[Processor.MetricMessage] = metricSpec.processor
-  
-  private def getOrCreateMetricActor(behavior: Behavior[Processor.MetricMessage], name: String): ActorRef[Processor.MetricMessage] = {
-    Option(metricChildren.get(name)) match {
-      case Some(actor) => actor
-      case None =>
-        context.log.debug(s"Creating new metric actor ($name)")
-        val actor = context.spawn(behavior, name)
-        metricChildren.put(name, actor)
-        context.watchWith(actor, MetricProcessorWasTerminated(actor))
-        actor
-    }
-  }
   
   private def getOrCreateProfileActor(behavior: Behavior[Processor.ProfileMessage], modelVersionId: Long, dataType: DataProfileType): ActorRef[Processor.ProfileMessage] = {
     Option(profileChildren.get((modelVersionId, dataType))).getOrElse({
@@ -90,18 +67,6 @@ class SonarSupervisor(context: ActorContext[SonarSupervisor.Message])(implicit c
         case Some(metadata) =>
           context.log.info(s"ExecutionMetadata(modelVersionId=${metadata.modelVersionId}, modelName=${metadata.modelName}, appInfo=${metadata.appInfo}, latency=${metadata.latency})")
           val modelVersionId = metadata.modelVersionId
-          // Concept drift metrics
-          // Each MetricSpec *must* have an appropriate processor
-//          metricSpecService.getMetricSpecsByModelVersion(modelVersionId).unsafeRunAsync {
-//            case Right(metricSpecs) => 
-//              metricSpecs
-//                /*_*/
-//                .map(spec => getOrCreateMetricActor(processor(spec), s"${spec.id}-${spec.modelVersionId}"))
-//                /*_*/
-//                .foreach(_ ! Processor.MetricRequest(payload, metricWriter))
-//            case Left(exc) => context.log.error(exc, s"Error while getting MetricSpecs")
-//          }
-          
           // Data profiles
           // Each DataProfileType *can* have a processor, otherwise it will be ignored
           modelDataService.getModelVersion(modelVersionId).unsafeRunAsync {
@@ -125,25 +90,6 @@ class SonarSupervisor(context: ActorContext[SonarSupervisor.Message])(implicit c
             case Left(exc) => context.log.error(exc, s"Error while getting ModelVersion")
           }
         case None => context.log.warning(s"Empty metadata: $payload")
-      }
-      this
-      
-    case AddProcessor(metricSpec) =>
-      context.log.debug(s"Got AddProcessor: $metricSpec")
-      /*_*/
-      getOrCreateMetricActor(processor(metricSpec), metricSpec.id)
-      /*_*/
-      this
-    case RemoveProcessor(metricSpecId) =>
-      context.log.debug(s"Got RemoveProcessor: $metricSpecId")
-      metricChildren.remove(metricSpecId)
-      this
-      
-    case MetricProcessorWasTerminated(actor) =>
-      context.log.debug(s"Metric Processor actor was terminated")
-      metricChildren.find(actor) match {
-        case Some(key) => metricChildren.remove(key) 
-        case None =>
       }
       this
     case ProfileProcessorWasTerminated(actor) =>

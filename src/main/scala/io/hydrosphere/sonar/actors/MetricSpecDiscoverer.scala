@@ -29,47 +29,16 @@ object MetricSpecDiscoverer {
 
   case class GetAll(replyTo: ActorRef[GetAllResponse]) extends DiscoveryMsg
 
-  case class GetAllResponse(specs: List[MetricSpec]) extends DiscoveryResponse
+  case class GetAllResponse(specs: List[GMetricSpec]) extends DiscoveryResponse
 
   case class FindBySpecId(specId: String, replyTo: ActorRef[FindBySpecResponse]) extends DiscoveryMsg
 
-  case class FindBySpecResponse(spec: Option[MetricSpec]) extends DiscoveryResponse
+  case class FindBySpecResponse(spec: Option[GMetricSpec]) extends DiscoveryResponse
 
   case class GetByModelVersion(versionId: Long, replyTo: ActorRef[GetByModelVersionResponse]) extends DiscoveryMsg
 
-  case class GetByModelVersionResponse(specs: List[MetricSpec]) extends DiscoveryResponse
-
-  def mapCmp(comparison: ThresholdConfig.CmpOp): Option[ThresholdCmpOperator] = {
-    comparison match {
-      case CmpOp.EQ => Some(Eq)
-      case CmpOp.NOT_EQ => Some(NotEq)
-      case CmpOp.GREATER => Some(Greater)
-      case CmpOp.LESS => Some(Less)
-      case CmpOp.GREATER_EQ => Some(GreaterEq)
-      case CmpOp.LESS_EQ => Some(LessEq)
-      case CmpOp.Unrecognized(_) => None
-    }
-  }
-
-  def specFromGrpc(gms: GMetricSpec): Option[MetricSpec] = {
-    for {
-      rawConfig <- gms.customModelConfig
-      thr <- rawConfig.threshold
-      servable <- rawConfig.servable
-      config = CustomModelMetricSpecConfiguration(
-        modelVersionId = rawConfig.monitorModelId,
-        servableName = servable.name,
-        threshold = Some(thr.value),
-        thresholdCmpOperator = mapCmp(thr.comparison)
-      )
-    } yield CustomModelMetricSpec(
-      name = gms.name,
-      modelVersionId = gms.modelVersionId,
-      withHealth = true,
-      config = config,
-      id = gms.id
-    )
-  }
+  case class GetByModelVersionResponse(specs: List[GMetricSpec]) extends DiscoveryResponse
+  
 
   def actorObserver(actorRef: ActorRef[DiscoveryMsg]): StreamObserver[MetricSpecDiscoveryEvent] = {
     new StreamObserver[MetricSpecDiscoveryEvent] {
@@ -88,7 +57,7 @@ object MetricSpecDiscoverer {
   }
 
   def apply(reconnectTimeout: FiniteDuration, stub: ServingDiscovery): Behavior[DiscoveryMsg] = {
-    val metricSpecs = TrieMap.empty[String, MetricSpec]
+    val metricSpecs = TrieMap.empty[String, GMetricSpec]
 
     def metricSpecHandler = Behaviors.receivePartial[DiscoveryMsg] {
       case (_, GetAll(replyTo)) =>
@@ -104,14 +73,7 @@ object MetricSpecDiscoverer {
         Behavior.same
 
       case (context, DiscoveredSpec(internal)) =>
-        metricSpecs ++= internal.added.flatMap { x =>
-          specFromGrpc(x) match {
-            case Some(value) => Some(value)
-            case None =>
-              context.log.info(s"Invalid MetricSpec id=${x.id} name=${x.name}. Ignoring.")
-              None
-          }
-        }.map(x => x.id -> x).toMap
+        metricSpecs ++= internal.added.map(x => x.id -> x).toMap
         metricSpecs --= internal.removedIdx
         Behavior.same
     }
