@@ -1,7 +1,5 @@
 package io.hydrosphere.sonar.services
 
-import java.io.ByteArrayInputStream
-
 import cats.data.NonEmptyList
 import cats.implicits._
 import cats.effect._
@@ -44,6 +42,8 @@ trait BatchMetricService[F[_]] {
 }
 
 class MongoParquetBatchMetricService[F[_]: Async](config: Configuration, mongoClient: MongoClient, modelDataService: ModelDataService[IO], checkStorageService: CheckStorageService[IO]) extends BatchMetricService[F] {
+  
+  case object FirstAggregationError extends Throwable
 
   lazy val database: MongoDatabase = mongoClient.getDatabase(config.mongo.database)
   lazy val checkCollection: MongoCollection[Document] =
@@ -51,9 +51,10 @@ class MongoParquetBatchMetricService[F[_]: Async](config: Configuration, mongoCl
   lazy val aggregatedCheckCollection: MongoCollection[Document] =
     database.getCollection("aggregated_check")
 
-  private def getChecks(modelVersionId: Long, to: String): IO[Seq[Document]] = {
+  // TODO: should be in a storage service
+  private def getChecks(modelVersionId: Long, from: String, to: String): IO[Seq[Document]] = {
     checkCollection
-      .find(and(lt("_id", BsonObjectId(to)), equal("_hs_model_version_id", modelVersionId)))
+      .find(and(and(gte("_id", BsonObjectId(from)), lte("_id", BsonObjectId(to))), equal("_hs_model_version_id", modelVersionId)))
       .toFuture()
       .liftToAsync[IO]
   }
@@ -69,6 +70,10 @@ class MongoParquetBatchMetricService[F[_]: Async](config: Configuration, mongoCl
             .requiredString("_hs_model_name")
             .requiredLong("_hs_model_incremental_version")
             .requiredString("_hs_request_id")
+            .requiredLong("_hs_timestamp")
+            .requiredInt("_hs_year")
+            .requiredInt("_hs_month")
+            .requiredInt("_hs_day")
         
             .optionalString("_hs_error")
             .optionalDouble("_hs_score")
@@ -151,14 +156,19 @@ class MongoParquetBatchMetricService[F[_]: Async](config: Configuration, mongoCl
     rootBuilder = rawChecksBuilder.endRecord().noDefault()
     
     rootBuilder.endRecord()
-  } 
+  }
 
   private def onNewDoc(doc: ChangeStreamDocument[Document]): Unit = {
     val fullDoc = doc.getFullDocument
     val modelVersionId = fullDoc.getLong("_hs_model_version_id")
     val program: IO[String] = for {
+      maybeAggregation <- checkStorageService.getPreviousAggregate(modelVersionId, fullDoc.getObjectId("_id").toHexString)
+      aggregation <- maybeAggregation match {
+        case Some(value) => value.pure[IO]
+        case None => IO.raiseError(FirstAggregationError)
+      }
       modelVersion <- modelDataService.getModelVersion(modelVersionId)
-      checks <- getChecks(modelVersionId, fullDoc.getObjectId("_hs_first_id").toHexString)
+      checks <- getChecks(modelVersionId, aggregation.getObjectId("_hs_first_id").toHexString, aggregation.getObjectId("_hs_last_id").toHexString)
       fields = modelVersion.contract.map(_.extractAllFields).getOrElse(Seq.empty)
       batchChecks: Map[String, Map[String, Map[String, Int]]] = fields.flatMap(field => field.profile match {
         case NUMERICAL => {
@@ -167,7 +177,7 @@ class MongoParquetBatchMetricService[F[_]: Async](config: Configuration, mongoCl
             // TODO: get right numerical types
             .map(x => if (field.shape.get.isScalar) Seq[Double](x.getLong(field.name).toDouble) else x.get[BsonArray](field.name).get.asScala.map(_.asDouble().doubleValue()))
           val transposed = CollectionOps.safeTranspose(data)
-          // TODO: use production distribution
+          // TODO: use training distribution
           val ksFn = (sample: NonEmptyList[Double]) => KolmogorovSmirnovTest.test(sample, Statistics.generateDistribution(Statistics.Distribution.Normal, 100))
           val ksTestResults = transposed.filter(_.nonEmpty).map(l => NonEmptyList(l.head, l.toList.tail)).map(ksFn).map(result => result.value <= result.rejectionLevel).map(_.toInt)
           Seq(field.name -> Map("ks" -> Map("checked" -> ksTestResults.size, "passed" -> ksTestResults.sum)))
@@ -176,13 +186,18 @@ class MongoParquetBatchMetricService[F[_]: Async](config: Configuration, mongoCl
         case _ => Seq.empty
       }).toMap
       _ <- checkStorageService.enrichAggregatesWithBatchChecks(fullDoc.getObjectId("_id").toHexString, batchChecks)
-      jsons = checks.map(_.toJson(
-        settings = JsonWriterSettings
-          .builder()
-          .objectIdConverter((value: ObjectId, writer: StrictJsonWriter) => writer.writeString(value.toHexString))
-          .build()
-      ))
-      schema <- IO(inferSchema(fields))
+      groupedByPath = checks.groupBy(check => {
+        s"${check.getString("_hs_model_name")}/${check.getLong("_hs_model_incremental_version")}/_hs_year=${check.getInteger("_hs_year")}/_hs_month=${check.getInteger("_hs_month")}/_hs_day=${check.getInteger("_hs_day")}/${aggregation.getObjectId("_id").toHexString}.parquet"
+      })
+
+      schema = inferSchema(fields)
+      _ <- IO[Unit] {
+        val minio = new MinioClient("http://minio:9000", "minio", "minio123")
+        val exists = minio.bucketExists("feature-lake")
+        if (!exists) {
+          minio.makeBucket("feature-lake")
+        }
+      }
       result <- IO {
         println(s"Schema: $schema")
         // TODO: remove hardcode
@@ -192,31 +207,45 @@ class MongoParquetBatchMetricService[F[_]: Async](config: Configuration, mongoCl
         conf.set("fs.s3a.endpoint", "http://minio:9000")
         conf.set("fs.s3a.path.style.access", "true")
         conf.set("fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
-        // TODO: create bucket
-        val writer = AvroParquetWriter
-          .builder[Record](new Path("s3a://feature-lake/blah.parquet"))
-          .withConf(conf)
-          .withCompressionCodec(CompressionCodecName.SNAPPY)
-          .withSchema(schema)
+        
+        val jsonWriterSettings = JsonWriterSettings
+          .builder()
+          .objectIdConverter((value: ObjectId, writer: StrictJsonWriter) => writer.writeString(value.toHexString))
           .build()
-        println("Writer is built")
+        
+        groupedByPath.foreach({case (path, docs) =>
+          val writer = AvroParquetWriter
+            .builder[Record](new Path(s"s3a://feature-lake/${path}"))
+            .withConf(conf)
+            .withCompressionCodec(CompressionCodecName.SNAPPY)
+            .withSchema(schema)
+            .build()
+          println(s"Writer for ${path} is built")
 
-        val converter = new JsonAvroConverter()
-        val records = jsons.map(json => converter.convertToGenericDataRecord(json.getBytes, schema))
+          val converter = new JsonAvroConverter()
+          val records = docs
+            .map(_.toJson(jsonWriterSettings))
+            .map(json => converter.convertToGenericDataRecord(json.getBytes, schema))
 
-        for (record: Record <- records) {
-          println("writing record")
-          writer.write(record)
-        }
-        println("closing writes")
-        writer.close()
+          for (record: Record <- records) {
+            println("writing record")
+            writer.write(record)
+          }
+          println("closing writes")
+          writer.close()
+
+        })
+        
         "ok"
       }
     } yield result
     program.unsafeRunAsync {
-      case Left(value) => 
-        println(s"EEEEEEEEEEEROR $value")
-        value.printStackTrace()
+      case Left(value) => value match {
+        case FirstAggregationError => // do nothing
+        case _ => 
+          println(s"EEEEEEEEEEEROR $value")
+          value.printStackTrace()
+      }
       case Right(value) => println(value)
     }
   }

@@ -13,7 +13,7 @@ case class DescriptiveStatistics(
 
 object DescriptiveStatistics {
   def apply(pp: NumericalPreprocessedProfile, median: Double): DescriptiveStatistics = {
-    val variance = if (pp.sum != 0) {
+    val variance = if (pp.size != 0 && pp.size != 1) {
       ((pp.squaresSum - pp.sum * pp.sum / pp.size) / (pp.size - 1)).toDouble
     } else {
       Double.NaN

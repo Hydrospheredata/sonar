@@ -18,12 +18,16 @@ import io.hydrosphere.sonar.utils.ModelFieldOps._
 import io.hydrosphere.sonar.utils.TensorProtoOps._
 import org.bson.json.{JsonWriterSettings, StrictJsonWriter}
 import org.bson.types.ObjectId
-import org.mongodb.scala.bson.{BsonArray, BsonBoolean, BsonDocument, BsonNull, BsonNumber, BsonObjectId, BsonString, BsonValue}
+import org.mongodb.scala.bson.{BsonArray, BsonBoolean, BsonDateTime, BsonDocument, BsonNull, BsonNumber, BsonObjectId, BsonString, BsonValue}
 import org.mongodb.scala.model.Filters.{lt, _}
 import org.mongodb.scala.model.UpdateOptions
 import org.mongodb.scala.model.Sorts.{descending, _}
 import org.mongodb.scala.model.Updates._
 import org.mongodb.scala.{Document, MongoClient, MongoCollection, MongoDatabase}
+
+import java.util.Calendar
+import java.util.GregorianCalendar
+
 
 object CheckStorageService {
   type CheckedRequest = (ExecutionInformation, Map[String, Seq[Check]])
@@ -35,11 +39,14 @@ trait CheckStorageService[F[_]] {
   def getAggregateCount(modelVersionId: Long): F[Long]
 
   // TODO:  Map[String, Map[String, Map[String, Int]]] should be case class (maybe `Check`?)
-  def enrichAggregatesWithBatchChecks(nextAggregationId: String, checks: Map[String, Map[String, Map[String, Int]]]): F[Unit]
+  def enrichAggregatesWithBatchChecks(aggregationId: String, checks: Map[String, Map[String, Map[String, Int]]]): F[Unit]
   
   // TODO: can we make this better than returning json representation as a String?
   def getChecks(modelVersionId: Long, from: String, to: String): F[Seq[String]]
   def getAggregates(modelVersionId: Long, limit: Int, offset: Int): F[Seq[String]]
+  
+  // TODO: it should not be mongo specific type
+  def getPreviousAggregate(modelVersionId: Long, nextAggregationId: String): F[Option[Document]]
 }
 
 class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: MongoClient) extends CheckStorageService[F] with Logging {
@@ -57,36 +64,30 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
     if (score.isNaN) BsonNull() else BsonNumber(score)
     
   }
-
+  
+  override def getPreviousAggregate(modelVersionId: Long, nextAggregationId: String): F[Option[Document]] = {
+    aggregatedCheckCollection
+      .find(and(lt("_id", new ObjectId(nextAggregationId)), equal("_hs_model_version_id", modelVersionId)))
+      .sort(descending("_id"))
+      .limit(1)
+      .toFuture()
+      .liftToAsync[F]
+      .map(_.headOption)
+  }
 
   override def getAggregateCount(modelVersionId: Long): F[Long] = {
     aggregatedCheckCollection
-      .countDocuments()
+      .countDocuments(equal("_hs_model_version_id", modelVersionId))
       .toFuture()
       .liftToAsync[F]
   }
 
-  override def enrichAggregatesWithBatchChecks(nextAggregationId: String, checks: Map[String, Map[String, Map[String, Int]]]): F[Unit] = {
-    logger.info(s"Enrich aggregation for $nextAggregationId")
-    logger.info(s"$checks")
-    for {
-      aggregates <- aggregatedCheckCollection
-                      .find(lt("_id", new ObjectId(nextAggregationId)))
-                      .sort(descending("_id"))
-                      .limit(1)
-                      .toFuture()
-                      .liftToAsync[F]
-      previousId = aggregates.headOption.map(_.getObjectId("_id").toHexString)
-      _ = logger.info(s"updating ${previousId}")
-      _ <- previousId match {
-        case Some(id) => aggregatedCheckCollection
-                            .updateOne(equal("_id", new ObjectId(id)), set("_hs_batch", checks))
-                            .toFuture()
-                            .liftToAsync[F]
-                            .map(r => logger.info(r.toString))
-        case None => Async[F].unit
-      }  
-    } yield Unit
+  override def enrichAggregatesWithBatchChecks(aggregationId: String, checks: Map[String, Map[String, Map[String, Int]]]): F[Unit] = {
+    aggregatedCheckCollection
+      .updateOne(equal("_id", new ObjectId(aggregationId)), set("_hs_batch", checks))
+      .toFuture()
+      .liftToAsync[F]
+      .map(_ => Unit)
   }
 
   override def getChecks(modelVersionId: Long, from: String, to: String): F[Seq[String]] = {
@@ -221,6 +222,8 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
 //        }}))
     }
     
+    val date = objectId.getValue.getDate()
+    val calendar = new GregorianCalendar
     val bsonChecks = maybeBsonChecks.map(_.checks).getOrElse(Seq.empty) :+ 
       ("_hs_raw_checks" -> BsonDocument(rawChecks.toMap)) :+
       ("_hs_latency" -> bsonLatency) :+
@@ -231,6 +234,10 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
       ("_hs_model_name" -> BsonString(modelVersion.model.map(_.name).getOrElse("_unknown"))) :+
       ("_hs_model_incremental_version" -> BsonNumber(modelVersion.version)) :+
       ("_hs_request_id" -> ei.metadata.map(_.requestId).map(BsonString.apply).getOrElse(BsonNull())) :+
+      ("_hs_timestamp" -> BsonNumber(date.getTime)) :+
+      ("_hs_year" -> BsonNumber(calendar.get(Calendar.YEAR))) :+
+      ("_hs_month" -> BsonNumber(calendar.get(Calendar.MONTH) + 1)) :+
+      ("_hs_day" -> BsonNumber(calendar.get(Calendar.DAY_OF_MONTH))) :+
       ("_id" -> objectId)
     val insertDocument = Document(bsonChecks)
     
