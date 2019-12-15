@@ -165,7 +165,7 @@ object Main extends IOApp with Logging {
     
     config <- loadConfiguration[IO]
     _ <- IO(logger.info(config.toString))
-mongoClient <- Dependencies.mongoClient[IO](config)
+    mongoClient <- Dependencies.mongoClient[IO](config)
     grpcChannel <- createGrpcChannel[IO](config)
     gatewayRpc = GatewayServiceRpc.make[IO](grpcChannel)
     discoveryRpcStub <- createDiscoveryStub[IO](grpcChannel)

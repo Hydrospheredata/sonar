@@ -10,6 +10,12 @@ object Dependencies {
   val AkkaV = "2.5.19"
   val HadoopV = "3.2.1"
   val ParquetV = "1.11.0"
+  val AwsV = "1.11.456"
+  
+  
+  val aws = Seq(
+    "com.amazonaws" % "aws-java-sdk-bundle" % AwsV
+  )
 
   val logback: Seq[ModuleID] = Seq(
     "ch.qos.logback" % "logback-classic" % LogbackV,
@@ -52,14 +58,14 @@ object Dependencies {
   )
 
   val cats: Seq[ModuleID] = Seq(
-    "org.typelevel" %% "cats-core" % "1.5.0",
-    "org.typelevel" %% "cats-effect" % "1.1.0"
+    "org.typelevel" %% "cats-core" % "2.0.0",
+    "org.typelevel" %% "cats-effect" % "2.0.0"
   )
   
   val fs2: Seq[ModuleID] = Seq(
     "co.fs2" %% "fs2-core" % "1.0.3",
     "co.fs2" %% "fs2-io" % "1.0.3",
-    "io.github.dmateusp" %% "fs2-aws" % "0.27.3"
+    "io.github.dmateusp" %% "fs2-aws" % "0.27.3" exclude("com.amazonaws", "aws-java-sdk-bundle")
   )
   
   val math: Seq[ModuleID] = Seq(
@@ -88,11 +94,9 @@ object Dependencies {
   
   val nlp: ModuleID = "edu.stanford.nlp" % "stanford-corenlp" % "3.9.2"
 
-  val kite: ModuleID = "org.kitesdk" % "kite-data-core" % "1.1.0"
-  
   val hadoop: Seq[ModuleID] = Seq(
     "org.apache.hadoop" % "hadoop-common" % HadoopV,
-    "org.apache.hadoop" % "hadoop-aws" % HadoopV
+    "org.apache.hadoop" % "hadoop-aws" % HadoopV exclude("com.amazonaws", "aws-java-sdk-bundle")
   )
   
   val parquet: Seq[ModuleID] = Seq(
@@ -100,8 +104,12 @@ object Dependencies {
     "org.apache.parquet" % "parquet-encoding" % ParquetV,
     "org.apache.parquet" % "parquet-avro" % ParquetV
   )
+  
+  val json2avro: ModuleID = "tech.allegro.schema.json2avro" % "converter" % "0.2.9"
+  
+  val minio: ModuleID = "io.minio" % "minio" % "6.0.11"
 
   val projectDeps: Seq[ModuleID] = 
-    test ++ logback ++ circe ++ finch ++ doobie ++ grpc ++ pureconfig ++ akka ++ cats ++ fs2 ++ math ++ refined ++ hadoop ++ parquet :+ 
-      flyway :+ hashing :+ enumeratum :+ influx :+ mongo :+ nlp :+ kite
+    test ++ logback ++ circe ++ finch ++ doobie ++ grpc ++ pureconfig ++ akka ++ cats ++ fs2 ++ math ++ refined ++ hadoop ++ parquet ++ aws :+ 
+      flyway :+ hashing :+ enumeratum :+ influx :+ mongo :+ nlp :+ json2avro :+ minio
 }

@@ -20,6 +20,7 @@ import eu.timepit.refined.auto._
 import io.hydrosphere.serving.contract.model_field.ModelField
 import io.hydrosphere.serving.manager.data_profile_types.DataProfileType
 import io.hydrosphere.serving.tensorflow.types.DataType
+import io.minio.MinioClient
 import org.apache.avro.{Schema, SchemaBuilder}
 import org.apache.avro.generic.GenericData.Record
 import org.apache.hadoop.fs.Path
@@ -27,15 +28,15 @@ import org.apache.parquet.avro.AvroParquetWriter
 import org.apache.parquet.hadoop.metadata.CompressionCodecName
 import org.bson.json.{JsonWriterSettings, StrictJsonWriter}
 import org.bson.types.ObjectId
-import org.kitesdk.data.spi.filesystem.JSONFileReader
-import org.kitesdk.data.spi.{JsonUtil, SchemaUtil}
-import org.kitesdk.data.spi.partition
 import org.mongodb.scala.bson.{BsonArray, BsonObjectId}
 import org.mongodb.scala.model.Filters._
 import org.mongodb.scala.model.Aggregates._
 import org.mongodb.scala.{Document, MongoClient, MongoCollection, MongoDatabase}
+import tech.allegro.schema.json2avro.converter.JsonAvroConverter
 
 import scala.collection.JavaConverters._
+import scala.concurrent.ExecutionContext
+import scala.util.{Failure, Success}
 import scala.util.control.NonFatal
 
 trait BatchMetricService[F[_]] {
@@ -55,12 +56,6 @@ class MongoParquetBatchMetricService[F[_]: Async](config: Configuration, mongoCl
       .find(and(lt("_id", BsonObjectId(to)), equal("_hs_model_version_id", modelVersionId)))
       .toFuture()
       .liftToAsync[IO]
-//      .map(_.map(_.toJson(
-//        settings = JsonWriterSettings
-//          .builder()
-//          .objectIdConverter((value: ObjectId, writer: StrictJsonWriter) => writer.writeString(value.toHexString))
-//          .build()
-//      )))
   }
   
   def inferSchema(modelFields: Seq[ModelField]): Schema = {
@@ -124,19 +119,20 @@ class MongoParquetBatchMetricService[F[_]: Async](config: Configuration, mongoCl
     })
     
     var rawChecksBuilder = rootBuilder.name("_hs_raw_checks").`type`().record("_hs_raw_checks").fields()
+
+    rawChecksBuilder.name("_hs_metrics").`type`().map().values().nullable().record("RawCheck").fields()
+      .requiredBoolean("check")
+      .requiredString("description")
+      .requiredDouble("threshold")
+      .requiredDouble("value")
+      .optionalString("metricSpecId")
+      .endRecord().noDefault()
     
     modelFields.foreach(modelField => {
       modelField.profile match {
         case DataProfileType.NUMERICAL =>
           rawChecksBuilder = rawChecksBuilder
-            .name(modelField.name).`type`().map().values().nullable().record("RawCheck").fields()
-              .requiredBoolean("check")
-              .requiredString("description")
-              .requiredDouble("threshold")
-              .requiredDouble("value")
-              .optionalString("metricSpecId")
-              .endRecord().noDefault()
-          
+            .name(modelField.name).`type`().map().values().`type`("RawCheck").noDefault()
         case DataProfileType.NONE => // do nothing
         case DataProfileType.CATEGORICAL => // do nothing
         case DataProfileType.NOMINAL => // do nothing
@@ -151,15 +147,6 @@ class MongoParquetBatchMetricService[F[_]: Async](config: Configuration, mongoCl
         case DataProfileType.Unrecognized(value) => // do nothing
       }
     })
-    
-    rawChecksBuilder.name("_hs_metrics").`type`().map().values().nullable().record("RawCheck").fields()
-      .requiredBoolean("check")
-      .requiredString("description")
-      .requiredDouble("threshold")
-      .requiredDouble("value")
-      .optionalString("metricSpecId")
-      .endRecord().noDefault()
-      .endRecord().noDefault()
     
     rootBuilder = rawChecksBuilder.endRecord().noDefault()
     
@@ -198,20 +185,31 @@ class MongoParquetBatchMetricService[F[_]: Async](config: Configuration, mongoCl
       schema <- IO(inferSchema(fields))
       result <- IO {
         println(s"Schema: $schema")
-        val reader = new JSONFileReader(new ByteArrayInputStream(s"[${jsons.mkString(",")}]".getBytes), schema, classOf[Record])
-        reader.initialize()
-        println("Reader is initialized")
+        // TODO: remove hardcode
+        val conf = new HadoopConfiguration()
+        conf.set("fs.s3a.access.key", "minio")
+        conf.set("fs.s3a.secret.key", "minio123")
+        conf.set("fs.s3a.endpoint", "http://minio:9000")
+        conf.set("fs.s3a.path.style.access", "true")
+        conf.set("fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
+        // TODO: create bucket
         val writer = AvroParquetWriter
-          .builder[Record](new Path("s3a://hydro-serving-feature-lake/blah.parquet"))
-          .withConf(new HadoopConfiguration)
+          .builder[Record](new Path("s3a://feature-lake/blah.parquet"))
+          .withConf(conf)
           .withCompressionCodec(CompressionCodecName.SNAPPY)
           .withSchema(schema)
           .build()
         println("Writer is built")
-        for (record: Record <- reader.iterator().asScala) {
-          println(s"writing record $record")
+
+        val converter = new JsonAvroConverter()
+        val records = jsons.map(json => converter.convertToGenericDataRecord(json.getBytes, schema))
+
+        for (record: Record <- records) {
+          println("writing record")
           writer.write(record)
         }
+        println("closing writes")
+        writer.close()
         "ok"
       }
     } yield result
@@ -221,7 +219,6 @@ class MongoParquetBatchMetricService[F[_]: Async](config: Configuration, mongoCl
         value.printStackTrace()
       case Right(value) => println(value)
     }
-    println(doc.getFullDocument.toJson())
   }
   
   override def start: F[Unit] = {
