@@ -38,6 +38,7 @@ class MonitoringServiceGrpcApi(recipient: ActorRef[SonarSupervisor.Message], pro
             profileChecks = ProfileChecks.check(profiles, executionInformation)
             // TODO: get all metrics
             metricSpecs <- metricSpecService.getMetricSpecsByModelVersion(md.modelVersionId)
+            _ = logger.info(s"my metric specs: ${metricSpecs}")
             // TODO: move to separated class
             metricChecks <- maybeRequest match {
               case Some(req) => metricSpecs.collect {
@@ -63,10 +64,17 @@ class MonitoringServiceGrpcApi(recipient: ActorRef[SonarSupervisor.Message], pro
                     .attempt
               }
                 // TODO: process errors
-                .sequence.map(_.filter(_.isRight).map(_.right.get).toMap[String, Check])
+                .sequence.map(_.map {
+                case Left(value) =>
+                  logger.error(s"Error while getting metrics", value)
+                  Left(value)
+                case Right(value) =>
+                  logger.info(s"Success: $value")
+                  Right(value)
+              }.filter(_.isRight).map(_.right.get).toMap[String, Check])
               case None => IO.pure(Map.empty[String, Check])
             }
-            _ <- checkStorageService.saveCheckedRequest(executionInformation, modelVersion, profileChecks + ("_hs_metrics" -> metricChecks))
+            _ <- checkStorageService.saveCheckedRequest(executionInformation, modelVersion, profileChecks, metricChecks)
           } yield Unit
         case None => IO.unit // TODO: do something 
       }

@@ -122,22 +122,22 @@ class MongoParquetBatchMetricService[F[_]: Async](config: Configuration, mongoCl
           rootBuilder = rootBuilder.name(s"_hs_${modelField.name}_score").`type`().nullable().doubleType().noDefault()
       }
     })
-    
-    var rawChecksBuilder = rootBuilder.name("_hs_raw_checks").`type`().record("_hs_raw_checks").fields()
 
-    rawChecksBuilder.name("_hs_metrics").`type`().map().values().nullable().record("RawCheck").fields()
+    rootBuilder = rootBuilder.name("_hs_metric_checks").`type`().map().values().nullable().record("RawCheck").fields()
       .requiredBoolean("check")
       .requiredString("description")
       .requiredDouble("threshold")
       .requiredDouble("value")
       .optionalString("metricSpecId")
       .endRecord().noDefault()
+
+    var rawChecksBuilder = rootBuilder.name("_hs_raw_checks").`type`().record("_hs_raw_checks").fields()
     
     modelFields.foreach(modelField => {
       modelField.profile match {
         case DataProfileType.NUMERICAL =>
           rawChecksBuilder = rawChecksBuilder
-            .name(modelField.name).`type`().map().values().`type`("RawCheck").noDefault()
+            .name(modelField.name).`type`().array().items().`type`("RawCheck").noDefault()
         case DataProfileType.NONE => // do nothing
         case DataProfileType.CATEGORICAL => // do nothing
         case DataProfileType.NOMINAL => // do nothing

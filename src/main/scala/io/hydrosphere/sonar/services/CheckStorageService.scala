@@ -34,7 +34,7 @@ object CheckStorageService {
 }
 
 trait CheckStorageService[F[_]] {
-  def saveCheckedRequest(request: ExecutionInformation, modelVersion: ModelVersion, checks: Map[String, Map[String, Check]]): F[Unit]
+  def saveCheckedRequest(request: ExecutionInformation, modelVersion: ModelVersion, checks: Map[String, Seq[Check]], metricChecks: Map[String, Check]): F[Unit]
   
   def getAggregateCount(modelVersionId: Long): F[Long]
 
@@ -119,8 +119,10 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
       )))
   }
 
-  override def saveCheckedRequest(ei: ExecutionInformation, modelVersion: ModelVersion, checks: Map[String, Map[String, Check]]): F[Unit] = {
+  // TODO: refactor (may be create more typed data structures for enrcihed data and for aggregations)
+  override def saveCheckedRequest(ei: ExecutionInformation, modelVersion: ModelVersion, checks: Map[String, Seq[Check]], metricChecks: Map[String, Check]): F[Unit] = {
     logger.info(s"${modelVersion.id} saveCheckedRequest with ${checks.size} checks")
+    logger.info(s"With metric checks: $metricChecks")
     case class ByFieldChecks(checks: Seq[(String, BsonValue)], aggregates: Seq[(String, BsonValue)])
     
     def tensorDataToBson(tensorProto: TensorProto): BsonValue = {
@@ -182,50 +184,64 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
         case Left(_) => BsonNull() // TODO: process subfields
         case Right(_) => data.get(modelField.name).map(tensorDataToBson).getOrElse(BsonNull())
       }
-      val fieldChecks = checks.getOrElse(modelField.name, Map.empty)
-      val bsonScore = getScore(fieldChecks.values)
-      val aggregates = Seq(
-        s"${modelField.name}.checks" -> BsonNumber(fieldChecks.size), 
-        s"${modelField.name}.passed" -> BsonNumber(fieldChecks.values.map(_.check.toInt).sum)
-      )
+      val fieldChecks = checks.getOrElse(modelField.name, Seq.empty)
+      val bsonScore = getScore(fieldChecks)
+      // TODO: find more elegant way to get right values for numerical profiles
+      val aggregates = if (modelField.profile.isNumerical) {
+        val reducedChecks = fieldChecks.map(_.check).grouped(2).map(_.reduce(_ && _).toInt).toSeq
+        println(s"${modelField.name}: $reducedChecks")
+        Seq(
+          s"${modelField.name}.checks" -> BsonNumber(reducedChecks.size),
+          s"${modelField.name}.passed" -> BsonNumber(reducedChecks.sum)
+        )
+      } else {
+        Seq(
+          s"${modelField.name}.checks" -> BsonNumber(fieldChecks.size), 
+          s"${modelField.name}.passed" -> BsonNumber(fieldChecks.map(_.check.toInt).sum)
+        )
+      }
       val checkValues = Seq(
         modelField.name -> bsonValue, 
         s"_hs_${modelField.name}_score" -> bsonScore
       )
       ByFieldChecks(checkValues, aggregates)
     }.foldLeft(ByFieldChecks(Seq.empty, Seq.empty))((a, b) => ByFieldChecks(a.checks ++ b.checks, a.aggregates ++ b.aggregates))
+    
+    
     val bsonLatency = ei.metadata.map(m => BsonNumber(m.latency)).getOrElse(BsonNull())
     val bsonError = ei.eitherResponseOrError.left.toOption.map(e => BsonString(e.errorMessage)).getOrElse(BsonNull())
-    val bsonScore = getScore(checks.values.flatMap(_.values))
-    val overallScore = getScore(checks.getOrElse("overall", Map.empty).values)
+    val bsonScore = getScore(checks.values.flatten)
+    val overallScore = getScore(metricChecks.values)
     val objectId = BsonObjectId()
     
     val rawChecks = checks.map {
       case (field, checkMap) => 
-        field -> BsonDocument(checkMap.mapValues(check => {
+        field -> BsonArray(checkMap.map(check => {
           BsonDocument(
             "check" -> BsonBoolean(check.check),
             "description" -> BsonString(check.description),
             "threshold" -> BsonNumber(check.threshold),
             "value" -> BsonNumber(check.value),
-            "metricSpecId" -> check.metricSpecId.map(BsonString.apply).getOrElse(BsonNull())
+            "metricSpecId" -> BsonNull()
           )
         }))
-//        field -> BsonDocument(checkMap.flatMap({case (name, check) => {
-//          Seq(name -> Map(
-//            "check" -> BsonBoolean(check.check),
-//            "description" -> BsonString(check.description),
-//            "threshold" -> BsonNumber(check.threshold),
-//            "value" -> BsonNumber(check.value),
-//            "metricSpecId" -> check.metricSpecId.map(BsonString.apply).getOrElse(BsonNull())
-//          ))
-//        }}))
     }
+    val metricChecksBson = BsonDocument(metricChecks.map {
+      case (metricName, check) =>
+        metricName -> BsonDocument(
+          "check" -> BsonBoolean(check.check),
+          "description" -> BsonString(check.description),
+          "threshold" -> BsonNumber(check.threshold),
+          "value" -> BsonNumber(check.value),
+          "metricSpecId" -> check.metricSpecId.map(BsonString.apply).getOrElse(BsonNull())
+        )
+    })
     
     val date = objectId.getValue.getDate()
     val calendar = new GregorianCalendar
     val bsonChecks = maybeBsonChecks.map(_.checks).getOrElse(Seq.empty) :+ 
       ("_hs_raw_checks" -> BsonDocument(rawChecks.toMap)) :+
+      ("_hs_metric_checks" -> metricChecksBson) :+
       ("_hs_latency" -> bsonLatency) :+
       ("_hs_error" -> bsonError) :+
       ("_hs_score" -> bsonScore) :+
@@ -241,7 +257,8 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
       ("_id" -> objectId)
     val insertDocument = Document(bsonChecks)
     
-    val increments = maybeBsonChecks.map(_.aggregates).getOrElse(Seq.empty) ++ checks.getOrElse("overall", Seq.empty).flatMap(check => Seq(s"_hs_metrics.${check._2.description}.checked" -> BsonNumber(1), s"_hs_metrics.${check._2.description}.passed" -> BsonNumber(check._2.check.toInt))) :+ ("_hs_requests" -> BsonNumber(1))
+    
+    val increments = maybeBsonChecks.map(_.aggregates).getOrElse(Seq.empty) ++ metricChecks.flatMap(check => Seq(s"_hs_metrics.${check._2.description}.checked" -> BsonNumber(1), s"_hs_metrics.${check._2.description}.passed" -> BsonNumber(check._2.check.toInt))) :+ ("_hs_requests" -> BsonNumber(1))
     val aggregateQuery = Document(
       "$inc" -> increments,
       "$set" -> Document("_hs_last_id" -> objectId),
