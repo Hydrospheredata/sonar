@@ -45,6 +45,9 @@ dockerfile in docker := {
     env("KAFKA_HOST", "kafka")
     env("KAFKA_PORT", "9092")
     env("APP_PORT", "9091")
+    
+    run("apk", "update")
+    run("apk", "add", "--no-cache", "libc6-compat", "nss")
 
     add(dockerFilesLocation, "/app/")
     cmd("/app/start.sh")

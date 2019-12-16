@@ -28,7 +28,7 @@ import io.hydrosphere.sonar.BuildInfo
 import io.hydrosphere.sonar.services._
 import io.hydrosphere.sonar.utils.{CsvRowSizeMismatch, MetricSpecNotFound}
 import io.hydrosphere.sonar.Logging
-import io.hydrosphere.sonar.terms.{MetricSpec, Profile, ProfileSourceKind}
+import io.hydrosphere.sonar.terms.{Profile, ProfileSourceKind}
 
 import scala.concurrent.ExecutionContext
 import scala.util.control.NonFatal
@@ -36,13 +36,9 @@ import scala.util.control.NonFatal
 case class ProfileResponse(training: Option[Profile], production: Option[Profile])
 case class S3FilePath(path: String)
 
-// TODO: remove after research
-case class Test(i: Int, s: String = UUID.randomUUID().toString, r: Double = scala.util.Random.nextDouble())
-
 //noinspection TypeAnnotation
 class HttpService[F[_] : Monad : Effect](
                                           metricSpecService: MetricSpecService[F],
-                                          metricStorageService: MetricStorageService[F],
                                           profileStorageService: ProfileStorageService[F],
                                           modelDataService: ModelDataService[F],
                                           batchProfileService: TrainingProfileService[F, Fs2Stream],
@@ -69,55 +65,6 @@ class HttpService[F[_] : Monad : Effect](
 
   def healthCheck: Endpoint[F, String] = get("health") {
     Ok("ok").pure[F]
-  }
-
-  def getMetricSpecById = get("monitoring" :: "metricspec" :: path[String]) { id: String =>
-    metricSpecService.getMetricSpecById(id).map(Ok)
-  }
-
-  def getMetricSpecsByModelVersion = get("monitoring" :: "metricspec" :: "modelversion" :: path[Long]) { modelVersionId: Long =>
-    metricSpecService.getMetricSpecsByModelVersion(modelVersionId).map(Ok)
-  }
-
-  def getAllMetricSpecs = get("monitoring" :: "metricspec") {
-    metricSpecService.getAllMetricSpecs.map(Ok)
-  }
-
-  def getMetricsAggregation = get("monitoring"
-    :: "metrics"
-    :: "aggregation"
-    :: param[Long]("modelVersionId")
-    :: params[String]("metrics")
-    :: paramOption[Long]("from")
-    :: paramOption[Long]("till")
-    :: paramOption[Int]("steps")){
-    (modelVersionId:Long, metrics:List[String], from:Option[Long], till:Option[Long], steps:Option[Int]) =>
-      metricStorageService.getMetricsAggregationRange(modelVersionId, metrics, from, till, steps.getOrElse(50)).map(Ok)
-  }
-
-  def getMetricsRange = get("monitoring"
-    :: "metrics"
-    :: "range"
-    :: param[Long]("modelVersionId")
-    :: params[String]("metrics")
-    :: param[Long]("from")
-    :: param[Long]("till")
-    :: param[String]("metricSpecId")
-    :: paramOption[String]("columnIndex")
-    :: paramOption[Int]("health")){
-    (modelVersionId:Long, metrics:List[String], from:Long, till:Long, metricSpecId: String, columnIndex: Option[String], health: Option[Int]) =>
-      metricStorageService.getMetricsRange(modelVersionId, from, till, metrics, metricSpecId, columnIndex, health).map(Ok)
-  }
-  
-  def getMetrics = get("monitoring" 
-    :: "metrics" 
-    :: param[Long]("modelVersionId") 
-    :: param[Long]("interval") 
-    :: params[String]("metrics") 
-    :: param[String]("metricSpecId")
-    :: paramOption[String]("columnIndex")) 
-  { (modelVersionId: Long, interval: Long, metrics: List[String], metricSpecId: String, columnIndex: Option[String]) =>
-    metricStorageService.getMetrics(modelVersionId, interval, metrics, metricSpecId, columnIndex).map(Ok)
   }
   
   def getProfiles = get("monitoring" :: "profiles" :: path[Long] :: path[String]) { (modelVersionId: Long, fieldName: String) =>
@@ -178,6 +125,17 @@ class HttpService[F[_] : Monad : Effect](
       )
     }.map(Ok)
   }
+  
+  def getChecksWithOffset = get("monitoring" :: "checks" :: path[Long] :: param[Int]("limit") :: param[Int]("offset")) { (modelVersionId: Long, limit: Int, offset: Int) =>
+    checkStorageService.getChecks(modelVersionId, limit, offset).map { jsonStrings => // TODO: ooph, dirty hacks
+      jsonStrings.map(jsonString =>
+        parse(jsonString) match {
+          case Left(value) => Json.Null
+          case Right(value) => value
+        }
+      )
+    }.map(Ok)
+  }
 
   def getCheckAggregates = get("monitoring" :: "checks" :: "aggregates" :: path[Long] :: param[Int]("limit") :: param[Int]("offset")) { (modelVersionId: Long, limit: Int, offset: Int) =>
     val program = for {
@@ -194,13 +152,10 @@ class HttpService[F[_] : Monad : Effect](
     program.map(Ok _)
   }
 
-  def endpoints = (getChecks :+: getCheckAggregates :+: getBuildInfo :+: healthCheck :+: getMetricSpecById :+: getAllMetricSpecs :+: getMetricSpecsByModelVersion :+: getMetricsAggregation :+: getMetricsRange :+: getMetrics :+: getProfiles :+: getProfileNames :+: batchProfile :+: getBatchStatus :+: s3BatchProfile) handle {
+  def endpoints = (getChecks :+: getCheckAggregates :+: getBuildInfo :+: healthCheck :+: getProfiles :+: getProfileNames :+: batchProfile :+: getBatchStatus :+: s3BatchProfile) handle {
     case e: io.finch.Error.NotParsed =>
       logger.warn(s"Can't parse json with message: ${e.getMessage()}")
       BadRequest(new RuntimeException(e))
-    case e: MetricSpecNotFound =>
-      logger.warn(s"Could not find MetricSpec with id ${e.id}")
-      NotFound(new RuntimeException(e))
     case e: CsvRowSizeMismatch =>
       logger.warn("CsvRowSizeMismatch")
       BadRequest(new RuntimeException(e))

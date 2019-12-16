@@ -20,10 +20,10 @@ object ProfileChecks extends Logging {
         }.toOption
         val checks = (input ++ output).headOption match {
           case Some(value) => Seq(
-            Check(value <= profile.quantileStatistics.max, "less than max", value, profile.quantileStatistics.max),
-            Check(value >= profile.quantileStatistics.min, "more than min", value, profile.quantileStatistics.min)
+            Check(value <= profile.quantileStatistics.max, "< max", value, profile.quantileStatistics.max),
+            Check(value >= profile.quantileStatistics.min, "> min", value, profile.quantileStatistics.min)
           )
-          case None => Seq.empty
+          case None => Seq.empty[Check]
         }
         name -> checks
     }.groupBy(_._1).mapValues(_.map(_._2).reduce(_ ++ _)).toMap

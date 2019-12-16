@@ -1,6 +1,6 @@
 package io.hydrosphere.sonar.services
 
-import akka.actor.testkit.typed.scaladsl.ActorTestKit
+import akka.actor.testkit.typed.scaladsl.{ActorTestKit, TestProbe}
 import com.google.protobuf.empty.Empty
 import io.grpc.stub.StreamObserver
 import io.hydrosphere.serving.discovery.serving.ServingDiscoveryGrpc.ServingDiscovery
@@ -42,16 +42,16 @@ class MetricSpecDiscovererTest extends FunSpec {
     it("should connect in disconnected state") {
       val testKit = ActorTestKit()
       val actor = testKit.spawn(MetricSpecDiscoverer(5.seconds, stub))
-      val probe = testKit.createTestProbe[GetAllResponse]()
+      val probe: TestProbe[GetAllResponse] = testKit.createTestProbe[GetAllResponse]()
       actor ! GetAll(probe.ref)
-      val emptyRes = probe.receiveOne()
+      val emptyRes = probe.receiveMessage()
       assert(emptyRes.specs.isEmpty)
       actor ! MetricSpecDiscoverer.DiscoveredSpec(MetricSpecDiscoveryEvent(added = List(spec)))
 //      Thread.sleep(5000)
       val probe2 = testKit.createTestProbe[GetAllResponse]()
 
       actor ! GetAll(probe2.ref)
-      val discovered = probe2.receiveOne(10.seconds)
+      val discovered = probe2.receiveMessage(10.seconds)
       assert(discovered.specs.head.id == "test")
 
       testKit.shutdownTestKit()

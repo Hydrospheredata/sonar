@@ -1,12 +1,11 @@
 package io.hydrosphere.sonar.config
 
 case class Configuration(
-  db: DBConfiguration,
-  mongo: MongoConfiguration,
-  grpc: GrpcConfiguration,
-  http: HttpConfiguration,
-  sidecar: SidecarConfiguration,
-  influx: InfluxConfiguration,
-  profile: ProfileConfiguration,
-  alerting: Option[AlertingConfiguration]
+                          mongo: MongoConfiguration,
+                          grpc: GrpcConfiguration,
+                          http: HttpConfiguration,
+                          sidecar: SidecarConfiguration,
+                          profile: ProfileConfiguration,
+                          storage: StorageConfiguration,
+                          alerting: Option[AlertingConfiguration]
 )

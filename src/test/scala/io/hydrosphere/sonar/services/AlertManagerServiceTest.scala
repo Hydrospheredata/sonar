@@ -2,7 +2,6 @@ package io.hydrosphere.sonar.services
 
 import cats.effect.IO
 import io.hydrosphere.serving.manager.grpc.entities.{Model, ModelVersion}
-import io.hydrosphere.sonar.terms.{Metric, MetricLabels}
 import org.scalatest.FunSuite
 
 class AlertManagerServiceTest extends FunSuite {
