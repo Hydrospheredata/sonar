@@ -204,7 +204,6 @@ class MongoParquetBatchMetricService[F[_]: Async](config: Configuration, mongoCl
         }
       }
       result <- IO {
-        println(s"Schema: $schema")
         val conf = new HadoopConfiguration()
         if (config.storage.accessKey.isDefined)
           conf.set("fs.s3a.access.key", config.storage.accessKey.get)
@@ -229,7 +228,6 @@ class MongoParquetBatchMetricService[F[_]: Async](config: Configuration, mongoCl
             .withCompressionCodec(CompressionCodecName.SNAPPY)
             .withSchema(schema)
             .build()
-          println(s"Writer for ${path} is built")
 
           val converter = new JsonAvroConverter()
           val records = docs
@@ -237,12 +235,10 @@ class MongoParquetBatchMetricService[F[_]: Async](config: Configuration, mongoCl
             .map(json => converter.convertToGenericDataRecord(json.getBytes, schema))
 
           for (record: Record <- records) {
-            println("writing record")
             writer.write(record)
           }
-          println("closing writes")
           writer.close()
-
+          println(s"Written ${records.size} rows to ${path}")
         })
         
         "ok"
@@ -255,7 +251,7 @@ class MongoParquetBatchMetricService[F[_]: Async](config: Configuration, mongoCl
           println(s"EEEEEEEEEEEROR $value")
           value.printStackTrace()
       }
-      case Right(value) => println(value)
+      case Right(value) => // do nothing
     }
   }
   

@@ -21,7 +21,6 @@ import scala.concurrent.ExecutionContext.Implicits.global
 class MonitoringServiceGrpcApi(recipient: ActorRef[SonarSupervisor.Message], profileStorageService: ProfileStorageService[IO], metricSpecService: MetricSpecService[IO], predictionService: PredictionService[IO], checkStorageService: CheckStorageService[IO], modelDataService: ModelDataService[IO]) extends MonitoringService with Logging {
   override def analyze(executionInformation: ExecutionInformation): Future[Empty] = {
     Future {
-      logger.info("Got executionInformation from GRPC")
       recipient ! SonarSupervisor.Request(executionInformation)
       // TODO: remove
       val maybeRequest = for {
@@ -38,7 +37,6 @@ class MonitoringServiceGrpcApi(recipient: ActorRef[SonarSupervisor.Message], pro
             profileChecks = ProfileChecks.check(profiles, executionInformation)
             // TODO: get all metrics
             metricSpecs <- metricSpecService.getMetricSpecsByModelVersion(md.modelVersionId)
-            _ = logger.info(s"my metric specs: ${metricSpecs}")
             // TODO: move to separated class
             metricChecks <- maybeRequest match {
               case Some(req) => metricSpecs.collect {
@@ -69,7 +67,6 @@ class MonitoringServiceGrpcApi(recipient: ActorRef[SonarSupervisor.Message], pro
                   logger.error(s"Error while getting metrics", value)
                   Left(value)
                 case Right(value) =>
-                  logger.info(s"Success: $value")
                   Right(value)
               }.filter(_.isRight).map(_.right.get).toMap[String, Check])
               case None => IO.pure(Map.empty[String, Check])

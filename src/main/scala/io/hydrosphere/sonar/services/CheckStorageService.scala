@@ -139,8 +139,7 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
 
   // TODO: refactor (may be create more typed data structures for enrcihed data and for aggregations)
   override def saveCheckedRequest(ei: ExecutionInformation, modelVersion: ModelVersion, checks: Map[String, Seq[Check]], metricChecks: Map[String, Check]): F[Unit] = {
-    logger.info(s"${modelVersion.id} saveCheckedRequest with ${checks.size} checks")
-    logger.info(s"With metric checks: $metricChecks")
+    logger.info(s"${modelVersion.id} saveCheckedRequest with ${checks.size} checks and ${metricChecks.size} metrics")
     case class ByFieldChecks(checks: Seq[(String, BsonValue)], aggregates: Seq[(String, BsonValue)])
     
     def tensorDataToBson(tensorProto: TensorProto): BsonValue = {
@@ -207,7 +206,6 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
       // TODO: find more elegant way to get right values for numerical profiles
       val aggregates = if (modelField.profile.isNumerical) {
         val reducedChecks = fieldChecks.map(_.check).grouped(2).map(_.reduce(_ && _).toInt).toSeq
-        println(s"${modelField.name}: $reducedChecks")
         Seq(
           s"${modelField.name}.checks" -> BsonNumber(reducedChecks.size),
           s"${modelField.name}.passed" -> BsonNumber(reducedChecks.sum)
