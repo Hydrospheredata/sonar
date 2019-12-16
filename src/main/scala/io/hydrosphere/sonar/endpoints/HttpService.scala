@@ -125,6 +125,17 @@ class HttpService[F[_] : Monad : Effect](
       )
     }.map(Ok)
   }
+  
+  def getChecksWithOffset = get("monitoring" :: "checks" :: path[Long] :: param[Int]("limit") :: param[Int]("offset")) { (modelVersionId: Long, limit: Int, offset: Int) =>
+    checkStorageService.getChecks(modelVersionId, limit, offset).map { jsonStrings => // TODO: ooph, dirty hacks
+      jsonStrings.map(jsonString =>
+        parse(jsonString) match {
+          case Left(value) => Json.Null
+          case Right(value) => value
+        }
+      )
+    }.map(Ok)
+  }
 
   def getCheckAggregates = get("monitoring" :: "checks" :: "aggregates" :: path[Long] :: param[Int]("limit") :: param[Int]("offset")) { (modelVersionId: Long, limit: Int, offset: Int) =>
     val program = for {

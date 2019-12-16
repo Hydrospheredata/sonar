@@ -43,6 +43,7 @@ trait CheckStorageService[F[_]] {
   
   // TODO: can we make this better than returning json representation as a String?
   def getChecks(modelVersionId: Long, from: String, to: String): F[Seq[String]]
+  def getChecks(modelVersionId: Long, limit: Int, offset: Int): F[Seq[String]]
   def getAggregates(modelVersionId: Long, limit: Int, offset: Int): F[Seq[String]]
   
   // TODO: it should not be mongo specific type
@@ -102,7 +103,24 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
           .build()
       )))
   }
-  
+
+
+  override def getChecks(modelVersionId: Long, limit: Int, offset: Int): F[Seq[String]] = {
+    checkCollection
+      .find(equal("_hs_model_version_id", modelVersionId))
+      .sort(descending("_id"))
+      .limit(limit)
+      .skip(offset)
+      .toFuture()
+      .liftToAsync[F]
+      .map(_.map(_.toJson(
+        settings = JsonWriterSettings
+          .builder()
+          .objectIdConverter((value: ObjectId, writer: StrictJsonWriter) => writer.writeString(value.toHexString))
+          .build()
+      )))
+  }
+
   override def getAggregates(modelVersionId: Long, limit: Int, offset: Int): F[Seq[String]] = {
     aggregatedCheckCollection
       .find(equal("_hs_model_version_id", modelVersionId))
