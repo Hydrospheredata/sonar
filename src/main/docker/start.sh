@@ -45,6 +45,15 @@ then
     APP_OPTS="$APP_OPTS -Dprofile.text.tagger-path=$PROFILE_TEXT_TAGGER_PATH -Dprofile.text.shift-reduce-parser-path=$PROFILE_TEXT_SHIFT_REDUCE_PARSER_PATH -Dprofile.text.lex-parser-path=$PROFILE_TEXT_LEXPARSER_PATH -Dprofile.text.sentiment-path=$PROFILE_TEXT_SENTIMENT_PATH"
     [[ ! -z "$ALERTING_MANAGER_URL" ]] && APP_OPTS="$APP_OPTS -Dalerting.alert-manager-url=$ALERTING_MANAGER_URL"
     [[ ! -z "$ALERTING_FRONTEND_URL" ]] && APP_OPTS="$APP_OPTS -Dalerting.frontend-url=$ALERTING_FRONTEND_URL"
+    
+    [[ ! -z "$STORAGE_BUCKET" ]] && APP_OPTS="$APP_OPTS -Dstorage.bucket=$FEATURE_LAKE_BUCKET"
+    [[ ! -z "$STORAGE_CREATE_BUCKET" ]] && APP_OPTS="$APP_OPTS -Dstorage.create-bucket=$FEATURE_LAKE_CREATE_BUCKET"
+    
+    [[ ! -z "${STORAGE_ACCESS_KEY}" ]] && APP_OPTS="$APP_OPTS -Dstorage.access-key=${STORAGE_ACCESS_KEY}"
+    [[ ! -z "${STORAGE_SECRET_KEY}" ]] && APP_OPTS="$APP_OPTS -Dstorage.secret-key=${STORAGE_SECRET_KEY}" 
+    [[ ! -z "${STORAGE_ENDPOINT}" ]] && APP_OPTS="$APP_OPTS -Dstorage.endpoint=${STORAGE_ENDPOINT}"
+    [[ ! -z "${STORAGE_PATH_STYLE_ACCESS}" ]] && APP_OPTS="$APP_OPTS -Dstorage.path-style-access=${STORAGE_PATH_STYLE_ACCESS}"
+    [[ ! -z "${STORAGE_S3_IMPL}" ]] && APP_OPTS="$APP_OPTS -Dstorage.s3-impl=${STORAGE_S3_IMPL}"
 
     echo "APP_OPTS=$APP_OPTS"
 else

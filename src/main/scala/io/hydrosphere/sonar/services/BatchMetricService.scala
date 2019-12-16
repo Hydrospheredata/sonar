@@ -192,21 +192,30 @@ class MongoParquetBatchMetricService[F[_]: Async](config: Configuration, mongoCl
 
       schema = inferSchema(fields)
       _ <- IO[Unit] {
-        val minio = new MinioClient("http://minio:9000", "minio", "minio123")
-        val exists = minio.bucketExists("feature-lake")
-        if (!exists) {
-          minio.makeBucket("feature-lake")
+        val endpoint = config.storage.endpoint.getOrElse("https://s3.amazonaws.com")
+        val maybeMinio = for {
+          accessKey <- config.storage.accessKey
+          secretKey <- config.storage.secretKey
+        } yield new MinioClient(endpoint, accessKey, secretKey) 
+        val minio = maybeMinio.getOrElse(new MinioClient(endpoint))
+        val exists = minio.bucketExists(config.storage.bucket)
+        if (!exists && config.storage.createBucket) {
+          minio.makeBucket(config.storage.bucket)
         }
       }
       result <- IO {
         println(s"Schema: $schema")
-        // TODO: remove hardcode
         val conf = new HadoopConfiguration()
-        conf.set("fs.s3a.access.key", "minio")
-        conf.set("fs.s3a.secret.key", "minio123")
-        conf.set("fs.s3a.endpoint", "http://minio:9000")
-        conf.set("fs.s3a.path.style.access", "true")
-        conf.set("fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
+        if (config.storage.accessKey.isDefined)
+          conf.set("fs.s3a.access.key", config.storage.accessKey.get)
+        if (config.storage.secretKey.isDefined)
+          conf.set("fs.s3a.secret.key", config.storage.secretKey.get)
+        if (config.storage.endpoint.isDefined)
+          conf.set("fs.s3a.endpoint", config.storage.endpoint.get)
+        if (config.storage.pathStyleAccess.isDefined)
+          conf.set("fs.s3a.path.style.access", config.storage.pathStyleAccess.get)
+        if (config.storage.s3Impl.isDefined)
+          conf.set("fs.s3a.impl", config.storage.s3Impl.get)
         
         val jsonWriterSettings = JsonWriterSettings
           .builder()
@@ -215,7 +224,7 @@ class MongoParquetBatchMetricService[F[_]: Async](config: Configuration, mongoCl
         
         groupedByPath.foreach({case (path, docs) =>
           val writer = AvroParquetWriter
-            .builder[Record](new Path(s"s3a://feature-lake/${path}"))
+            .builder[Record](new Path(s"s3a://${config.storage.bucket}/${path}"))
             .withConf(conf)
             .withCompressionCodec(CompressionCodecName.SNAPPY)
             .withSchema(schema)
