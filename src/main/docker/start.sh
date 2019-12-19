@@ -29,7 +29,7 @@ APP_OPTS=""
 [[ -z "$PROFILE_TEXT_LEXPARSER_PATH" ]] && PROFILE_TEXT_LEXPARSER_PATH="/data/lexparser/englishPCFG.ser.gz"
 [[ -z "$PROFILE_TEXT_SENTIMENT_PATH" ]] && PROFILE_TEXT_SENTIMENT_PATH="/data/sentiment/sentiment.ser.gz"
 
-JAVA_OPTS="-Xmx$JAVA_XMX -Xms$JAVA_XMX" 
+[ -z "$JAVA_OPTS" ] && JAVA_OPTS="-Xmx$JAVA_XMX -Xms$JAVA_XMX" 
 
 if [[ "$CUSTOM_CONFIG" = "" ]]
 then
