@@ -8,9 +8,10 @@ import cats._
 import cats.data.NonEmptyList
 import cats.effect._
 import cats.implicits._
-import com.twitter.finagle.Service
+import com.twitter.finagle.http.Status
+import com.twitter.finagle.{Service, SimpleFilter}
 import com.twitter.finagle.http.filter.LogFormatter
-import com.twitter.util.Duration
+import com.twitter.util.{Duration, Future, Return, Stopwatch, Throw}
 //import com.twitter.finagle.filter.LoggingFilter
 import com.twitter.finagle.http.filter.{CommonLogFormatter, Cors, LoggingFilter}
 import com.twitter.finagle.http.{Request, Response}
@@ -29,12 +30,46 @@ import io.hydrosphere.sonar.services._
 import io.hydrosphere.sonar.utils.{CsvRowSizeMismatch, MetricSpecNotFound}
 import io.hydrosphere.sonar.Logging
 import io.hydrosphere.sonar.terms.{Profile, ProfileSourceKind}
+import com.twitter.finagle.http.filter.{CommonLogFormatter => FinagleCommonLogFormatter}
+import com.twitter.finagle.filter.{LogFormatter => FinagleLogFormatter}
+
 
 import scala.concurrent.ExecutionContext
 import scala.util.control.NonFatal
 
 case class ProfileResponse(training: Option[Profile], production: Option[Profile])
 case class S3FilePath(path: String)
+
+abstract class RequestLoggingFilter[REQ <: Request](val formatter: FinagleLogFormatter[REQ, Response])
+  extends SimpleFilter[REQ, Response] with Logging {
+
+  def apply(request: REQ, service: Service[REQ, Response]): Future[Response] = {
+    val elapsed = Stopwatch.start()
+    val future = service(request)
+    future.respond {
+      case Return(reply) => logSuccess(elapsed(), request, reply)
+      case Throw(throwable) => logException(elapsed(), request, throwable)
+    }
+    future
+  }
+
+  def logSuccess(replyTime: Duration, request: REQ, reply: Response) {
+    val line = formatter.format(request, reply, replyTime)
+    logger.info(line)
+    logger.info(request.headerMap.mkString("\n"))
+    logger.info(s"is chunked: ${request.isChunked}")
+  }
+
+  def logException(duration: Duration, request: REQ, throwable: Throwable) {
+    val response = Response(request.version, Status.InternalServerError)
+    val line = formatter.format(request, response, duration)
+    logger.info(line)
+    logger.info(request.headerMap.mkString("\n"))
+    logger.info(s"is chunked: ${request.isChunked}")
+  }
+}
+
+object RequestLoggingFilter extends RequestLoggingFilter[Request](new FinagleCommonLogFormatter)
 
 //noinspection TypeAnnotation
 class HttpService[F[_] : Monad : Effect](
@@ -171,6 +206,6 @@ class HttpService[F[_] : Monad : Effect](
       allowsHeaders = _ => Some(Seq("*"))
     )
 
-    new Cors.HttpFilter(policy).andThen(endpoints.toServiceAs[Application.Json])
+    new Cors.HttpFilter(policy).andThen(RequestLoggingFilter).andThen(endpoints.toServiceAs[Application.Json])
   }
 }
