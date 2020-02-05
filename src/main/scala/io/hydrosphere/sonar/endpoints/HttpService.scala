@@ -1,6 +1,6 @@
 package io.hydrosphere.sonar.endpoints
 
-import java.io.File
+import java.io.{File, FileOutputStream, PrintWriter}
 import java.util.UUID
 import java.util.concurrent.Executors
 
@@ -116,8 +116,32 @@ class HttpService[F[_] : Monad : Effect](
     } yield Ok((training ++ production).distinct.sorted)
   }
   
+  def fileBatchProfile = post("monitoring" :: "profiles" :: "batch" :: path[Long] :: stringBody) { (modelVersionId: Long, contents: String) => 
+    for {
+      _ <- Effect[F].delay(logger.info("file"))
+      modelVersion <- modelDataService.getModelVersion(modelVersionId)
+      tempFile = {
+        val f = File.createTempFile("training_data", modelVersionId.toString)
+        f.deleteOnExit()
+        f
+      }
+      _ <- Effect[F].delay {
+        new PrintWriter(tempFile) {
+          // todo: ooph, rewrite
+          try {
+            write(contents)
+          } finally {
+            close()
+          }
+        }
+      }
+      _ <- batchProfileService.batchCsvProcess(tempFile.toString, modelVersion)
+    } yield Ok("ok")
+  }
+  
   def batchProfile = post("monitoring" :: "profiles" :: "batch" :: path[Long] :: stringBodyStream[Fs2Stream]) { (modelVersionId: Long, stream: Fs2Stream[F, String]) =>
     for {
+      _ <- Effect[F].delay(logger.info("stream"))
       modelVersion <- modelDataService.getModelVersion(modelVersionId)
       tempFile = {
         val f = File.createTempFile("training_data", modelVersionId.toString)
@@ -135,8 +159,9 @@ class HttpService[F[_] : Monad : Effect](
     } yield Ok("ok")
   }
   
-  def s3BatchProfile = post("monitoring" :: "profiles" :: "batch" :: path[Long] :: jsonBody[S3FilePath]) { (modelVersionId: Long, s3FilePath: S3FilePath) => 
+  def s3BatchProfile = post("monitoring" :: "profiles" :: "batch" :: path[Long] :: "s3" :: jsonBody[S3FilePath]) { (modelVersionId: Long, s3FilePath: S3FilePath) => 
     for {
+      _ <- Effect[F].delay(logger.info("s3"))
       modelVersion <- modelDataService.getModelVersion(modelVersionId)
       _ <- batchProfileService.batchCsvProcess(s3FilePath.path, modelVersion)
     } yield Ok("ok")
@@ -187,7 +212,7 @@ class HttpService[F[_] : Monad : Effect](
     program.map(Ok _)
   }
 
-  def endpoints = (getChecks :+: getCheckAggregates :+: getBuildInfo :+: healthCheck :+: getProfiles :+: getProfileNames :+: batchProfile :+: getBatchStatus :+: s3BatchProfile :+: getChecksWithOffset) handle {
+  def endpoints = (getChecks :+: getCheckAggregates :+: getBuildInfo :+: healthCheck :+: getProfiles :+: getProfileNames :+: batchProfile :+: getBatchStatus :+: fileBatchProfile :+: s3BatchProfile :+: getChecksWithOffset) handle {
     case e: io.finch.Error.NotParsed =>
       logger.warn(s"Can't parse json with message: ${e.getMessage()}")
       BadRequest(new RuntimeException(e))
