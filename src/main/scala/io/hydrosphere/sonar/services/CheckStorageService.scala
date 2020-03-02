@@ -46,6 +46,8 @@ trait CheckStorageService[F[_]] {
   def getChecks(modelVersionId: Long, limit: Int, offset: Int): F[Seq[String]]
   def getAggregates(modelVersionId: Long, limit: Int, offset: Int): F[Seq[String]]
   
+  def getCheckById(id: String): F[Option[String]]
+  
   // TODO: it should not be mongo specific type
   def getPreviousAggregate(modelVersionId: Long, nextAggregationId: String): F[Option[Document]]
 }
@@ -119,6 +121,22 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
           .objectIdConverter((value: ObjectId, writer: StrictJsonWriter) => writer.writeString(value.toHexString))
           .build()
       )))
+  }
+
+
+  override def getCheckById(id: String): F[Option[String]] = {
+    checkCollection
+      .find(equal("_id", BsonObjectId(id)))
+      .limit(1)
+      .toFuture()
+      .liftToAsync[F]
+      .map(_.headOption.map(_.toJson(
+        settings = JsonWriterSettings
+          .builder()
+          .objectIdConverter((value: ObjectId, writer: StrictJsonWriter) => writer.writeString(value.toHexString))
+          .build()
+        )
+      ))
   }
 
   override def getAggregates(modelVersionId: Long, limit: Int, offset: Int): F[Seq[String]] = {

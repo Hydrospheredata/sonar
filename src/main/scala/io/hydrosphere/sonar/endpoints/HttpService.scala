@@ -211,6 +211,16 @@ class HttpService[F[_] : Monad : Effect](
     
     program.map(Ok _)
   }
+  
+  def getCheckById = get("monitoring" :: "checks" :: path[String]) { (id: String) =>
+    checkStorageService.getCheckById(id).map { maybeString => maybeString.map { jsonString =>
+      parse(jsonString) match {
+        case Left(value) => Json.Null
+        case Right(value) => value
+      }
+    }
+    }.map(Ok)
+  }
 
   def endpoints = (getChecks :+: getCheckAggregates :+: getBuildInfo :+: healthCheck :+: getProfiles :+: getProfileNames :+: batchProfile :+: getBatchStatus :+: fileBatchProfile :+: s3BatchProfile :+: getChecksWithOffset) handle {
     case e: io.finch.Error.NotParsed =>
