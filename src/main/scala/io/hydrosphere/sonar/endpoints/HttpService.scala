@@ -241,6 +241,6 @@ class HttpService[F[_] : Monad : Effect](
       allowsHeaders = _ => Some(Seq("*"))
     )
 
-    new Cors.HttpFilter(policy).andThen(RequestLoggingFilter).andThen(endpoints.toServiceAs[Application.Json])
+    new Cors.HttpFilter(policy)./*andThen(RequestLoggingFilter).*/andThen(endpoints.toServiceAs[Application.Json])
   }
 }
