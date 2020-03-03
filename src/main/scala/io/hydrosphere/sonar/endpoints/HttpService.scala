@@ -212,7 +212,13 @@ class HttpService[F[_] : Monad : Effect](
     program.map(Ok _)
   }
 
-  def endpoints = (getChecks :+: getCheckAggregates :+: getBuildInfo :+: healthCheck :+: getProfiles :+: getProfileNames :+: batchProfile :+: getBatchStatus :+: fileBatchProfile :+: s3BatchProfile :+: getChecksWithOffset) handle {
+  def getTrainingData = get("monitoring" :: "training_data" :: param[Long]("modelVersionId")) { modelVersionId: Long =>
+    for {
+      result <- batchProfileService.getTrainingData(modelVersionId)
+    } yield Ok(result)
+  }
+
+  def endpoints = (getTrainingData :+: getChecks :+: getCheckAggregates :+: getBuildInfo :+: healthCheck :+: getProfiles :+: getProfileNames :+: batchProfile :+: getBatchStatus :+: fileBatchProfile :+: s3BatchProfile :+: getChecksWithOffset) handle {
     case e: io.finch.Error.NotParsed =>
       logger.warn(s"Can't parse json with message: ${e.getMessage()}")
       BadRequest(new RuntimeException(e))
