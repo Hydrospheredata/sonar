@@ -209,7 +209,17 @@ class HttpService[F[_] : Monad : Effect](
       )
     } yield Json.obj("count" -> Json.fromLong(count), "results" -> Json.arr(jsons: _*))
     
-    program.map(Ok _)
+    program.map(Ok)
+  }
+
+  def getCheckById = get("monitoring" :: "checks" :: path[String]) { (id: String) =>
+    checkStorageService.getCheckById(id).map { maybeString => maybeString.map { jsonString =>
+      parse(jsonString) match {
+        case Left(value) => Json.Null
+        case Right(value) => value
+      }
+    }
+    }.map(Ok)
   }
 
   def getTrainingData = get("monitoring" :: "training_data" :: param[Long]("modelVersionId")) { modelVersionId: Long =>
@@ -218,7 +228,7 @@ class HttpService[F[_] : Monad : Effect](
     } yield Ok(result)
   }
 
-  def endpoints = (getTrainingData :+: getChecks :+: getCheckAggregates :+: getBuildInfo :+: healthCheck :+: getProfiles :+: getProfileNames :+: batchProfile :+: getBatchStatus :+: fileBatchProfile :+: s3BatchProfile :+: getChecksWithOffset) handle {
+  def endpoints = (getTrainingData :+: getChecks :+: getCheckById :+: getCheckAggregates :+: getBuildInfo :+: healthCheck :+: getProfiles :+: getProfileNames :+: batchProfile :+: getBatchStatus :+: fileBatchProfile :+: s3BatchProfile :+: getChecksWithOffset) handle {
     case e: io.finch.Error.NotParsed =>
       logger.warn(s"Can't parse json with message: ${e.getMessage()}")
       BadRequest(new RuntimeException(e))
@@ -237,6 +247,6 @@ class HttpService[F[_] : Monad : Effect](
       allowsHeaders = _ => Some(Seq("*"))
     )
 
-    new Cors.HttpFilter(policy).andThen(RequestLoggingFilter).andThen(endpoints.toServiceAs[Application.Json])
+    new Cors.HttpFilter(policy)./*andThen(RequestLoggingFilter).*/andThen(endpoints.toServiceAs[Application.Json])
   }
 }
