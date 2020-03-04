@@ -111,13 +111,21 @@ class TrainingProfileServiceInterpreter(config: Configuration, state: Ref[IO, Ma
 
   def calculateTrainingDataKey(path: String, modelVersion: ModelVersion): String = {
     val filename = Paths.get(path).getFileName.toString
-    s"/${modelVersion.id}/$filename"
+    s"training-data/${modelVersion.id}/$filename.csv"
   }
 
   def handleLocalFile(path: String, modelVersion: ModelVersion): Stream[IO, Byte] = {
     val objectKey = calculateTrainingDataKey(path, modelVersion)
-    val document = TrainingDataDocument(objectKey, modelVersion)
-    fs2.Stream.eval(IO(minio.putObject(config.storage.bucket, objectKey, path))) >>
+    val fullS3Path = s"s3://${config.storage.bucket}/$objectKey"
+    val document = TrainingDataDocument(fullS3Path, modelVersion)
+    val s3CopyProgram = IO {
+      val exists = minio.bucketExists(config.storage.bucket)
+      if (!exists && config.storage.createBucket) {
+        minio.makeBucket(config.storage.bucket)
+      }
+      minio.putObject(config.storage.bucket, objectKey, path)
+    }
+    fs2.Stream.eval(s3CopyProgram) >>
       fs2.Stream.eval(IO.suspend(trainingDataCollection.insertOne(document).toF[IO])) >>
       file.readAll[IO](Paths.get(path), ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(2)), 2048)
   }
