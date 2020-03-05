@@ -192,12 +192,7 @@ class MongoParquetBatchMetricService[F[_]: Async](config: Configuration, mongoCl
 
       schema = inferSchema(fields)
       _ <- IO[Unit] {
-        val endpoint = config.storage.endpoint.getOrElse("https://s3.amazonaws.com")
-        val maybeMinio = for {
-          accessKey <- config.storage.accessKey
-          secretKey <- config.storage.secretKey
-        } yield new MinioClient(endpoint, accessKey, secretKey) 
-        val minio = maybeMinio.getOrElse(new MinioClient(endpoint))
+        val minio = S3Client.fromConfig(config)
         val exists = minio.bucketExists(config.storage.bucket)
         if (!exists && config.storage.createBucket) {
           minio.makeBucket(config.storage.bucket)
