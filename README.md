@@ -300,3 +300,15 @@ GET /monitoring/profiles/batch/{model-version-id}/status
 - Processing
 - NotRegistered
 
+
+#### Get training data for a model
+
+```
+GET /monitoring/training_data?modelVersionId={model-version-id}
+
+200 OK
+[
+    "s3://bucket/data1.csv",
+    "s3://bucket/data2.csv"
+]
+```

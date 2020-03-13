@@ -78,11 +78,11 @@ object Dependencies {
     instance <- Async[F].delay(new ProfileStorageServiceMongoInterpreter[F](config, state, client))
   } yield instance
   
-  def batchProfileService(config: Configuration, profileStorageService: ProfileStorageService[IO]): IO[TrainingProfileService[IO, fs2.Stream]] = {
+  def batchProfileService(config: Configuration, profileStorageService: ProfileStorageService[IO], mongoClient: MongoClient): IO[TrainingProfileService[IO, fs2.Stream]] = {
     implicit val cs: ContextShift[IO] = IO.contextShift(ExecutionContext.fromExecutor(Executors.newFixedThreadPool(10)))
     for {
       state <- Ref.of[IO, Map[Long, TrainingProfileService.ProcessingStatus]](Map.empty)
-      instance <- IO.delay(new TrainingProfileServiceInterpreter(config, state, profileStorageService))
+      instance <- IO.delay(new TrainingProfileServiceInterpreter(config, state, profileStorageService, mongoClient))
     } yield instance
   }
 
@@ -154,7 +154,7 @@ object Main extends IOApp with Logging {
     metricSpecService <- Dependencies.metricService[IO](discoveryAS, 3.minutes)
     profileStorageService <- Dependencies.profileStorageService[IO](config, mongoClient)
     modelDataService <- Dependencies.modelDataService[IO](config)
-    batchProfileService <- Dependencies.batchProfileService(config, profileStorageService)
+    batchProfileService <- Dependencies.batchProfileService(config, profileStorageService, mongoClient)
     checkStorageService <- Dependencies.checkStorageService[IO](config, mongoClient)
     httpService <- Dependencies.httpService[IO](metricSpecService, profileStorageService, modelDataService, batchProfileService, checkStorageService)
     predictionService <- Dependencies.predictionService[IO](gatewayRpc)

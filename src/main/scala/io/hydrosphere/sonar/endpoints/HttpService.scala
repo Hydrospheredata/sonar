@@ -209,9 +209,9 @@ class HttpService[F[_] : Monad : Effect](
       )
     } yield Json.obj("count" -> Json.fromLong(count), "results" -> Json.arr(jsons: _*))
     
-    program.map(Ok _)
+    program.map(Ok)
   }
-  
+
   def getCheckById = get("monitoring" :: "checks" :: path[String]) { (id: String) =>
     checkStorageService.getCheckById(id).map { maybeString => maybeString.map { jsonString =>
       parse(jsonString) match {
@@ -222,7 +222,13 @@ class HttpService[F[_] : Monad : Effect](
     }.map(Ok)
   }
 
-  def endpoints = (getChecks :+: getCheckById :+: getCheckAggregates :+: getBuildInfo :+: healthCheck :+: getProfiles :+: getProfileNames :+: batchProfile :+: getBatchStatus :+: fileBatchProfile :+: s3BatchProfile :+: getChecksWithOffset) handle {
+  def getTrainingData = get("monitoring" :: "training_data" :: param[Long]("modelVersionId")) { modelVersionId: Long =>
+    for {
+      result <- batchProfileService.getTrainingData(modelVersionId)
+    } yield Ok(result)
+  }
+
+  def endpoints = (getTrainingData :+: getChecks :+: getCheckById :+: getCheckAggregates :+: getBuildInfo :+: healthCheck :+: getProfiles :+: getProfileNames :+: batchProfile :+: getBatchStatus :+: fileBatchProfile :+: s3BatchProfile :+: getChecksWithOffset) handle {
     case e: io.finch.Error.NotParsed =>
       logger.warn(s"Can't parse json with message: ${e.getMessage()}")
       BadRequest(new RuntimeException(e))
