@@ -207,10 +207,13 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
       }
     }
     
-    val maybeBsonChecks = for {
+    val maybeFeilds = for {
       contract <- modelVersion.contract
       predict <- contract.predict
-      fields = predict.inputs ++ predict.outputs
+    } yield predict.inputs ++ predict.outputs
+    
+    val maybeBsonChecks = for {
+      fields <- maybeFeilds
       request <- ei.request
       response <- ei.eitherResponseOrError.toOption // TODO: there will be no metrics if error
       data = request.inputs ++ response.outputs
@@ -260,6 +263,9 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
           )
         }))
     }
+    val allRawChecks = maybeFeilds.getOrElse(Seq.empty).map(field => {
+      field.name -> rawChecks.getOrElse(field.name, BsonArray())
+    })
     val metricChecksBson = BsonDocument(metricChecks.map {
       case (metricName, check) =>
         metricName -> BsonDocument(
@@ -274,7 +280,7 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
     val date = objectId.getValue.getDate()
     val calendar = new GregorianCalendar
     val bsonChecks = maybeBsonChecks.map(_.checks).getOrElse(Seq.empty) :+ 
-      ("_hs_raw_checks" -> BsonDocument(rawChecks.toMap)) :+
+      ("_hs_raw_checks" -> BsonDocument(allRawChecks.toMap)) :+
       ("_hs_metric_checks" -> metricChecksBson) :+
       ("_hs_latency" -> bsonLatency) :+
       ("_hs_error" -> bsonError) :+

@@ -191,6 +191,7 @@ class MongoParquetBatchMetricService[F[_]: Async](config: Configuration, mongoCl
       })
 
       schema = inferSchema(fields)
+//      _ = println(schema.toString(true))
       _ <- IO[Unit] {
         val endpoint = config.storage.endpoint.getOrElse("https://s3.amazonaws.com")
         val maybeMinio = for {
@@ -231,7 +232,12 @@ class MongoParquetBatchMetricService[F[_]: Async](config: Configuration, mongoCl
 
           val converter = new JsonAvroConverter()
           val records = docs
+//              .map(doc => doc.get)
             .map(_.toJson(jsonWriterSettings))
+//            .map(json => {
+//              println(json)
+//              json
+//            })
             .map(json => converter.convertToGenericDataRecord(json.getBytes, schema))
 
           for (record: Record <- records) {
