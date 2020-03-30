@@ -221,18 +221,13 @@ class MongoParquetBatchMetricService[F[_]: Async](config: Configuration, mongoCl
           val writer = AvroParquetWriter
             .builder[Record](new Path(s"s3a://${config.storage.bucket}/${path}"))
             .withConf(conf)
-            .withCompressionCodec(CompressionCodecName.SNAPPY)
+            .withCompressionCodec(CompressionCodecName.GZIP)
             .withSchema(schema)
             .build()
 
           val converter = new JsonAvroConverter()
           val records = docs
-//              .map(doc => doc.get)
             .map(_.toJson(jsonWriterSettings))
-//            .map(json => {
-//              println(json)
-//              json
-//            })
             .map(json => converter.convertToGenericDataRecord(json.getBytes, schema))
 
           for (record: Record <- records) {
