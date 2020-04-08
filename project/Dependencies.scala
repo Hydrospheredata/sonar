@@ -64,7 +64,8 @@ object Dependencies {
   val HadoopV = "3.2.1"
   val hadoop: Seq[ModuleID] = Seq(
     "org.apache.hadoop" % "hadoop-common" % HadoopV,
-    "org.apache.hadoop" % "hadoop-aws" % HadoopV exclude("com.amazonaws", "aws-java-sdk-bundle")
+    "org.apache.hadoop" % "hadoop-aws" % HadoopV exclude("com.amazonaws", "aws-java-sdk-bundle"),
+    "org.apache.hadoop" % "hadoop-mapreduce-client-core" % HadoopV
   )
 
   val ParquetV = "1.11.0"

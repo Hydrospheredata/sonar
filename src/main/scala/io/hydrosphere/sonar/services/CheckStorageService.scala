@@ -10,7 +10,7 @@ import io.hydrosphere.serving.tensorflow.tensor.TensorProto
 import io.hydrosphere.serving.tensorflow.types.DataType
 import io.hydrosphere.sonar.Logging
 import io.hydrosphere.sonar.config.Configuration
-import io.hydrosphere.sonar.terms.Check
+import io.hydrosphere.sonar.terms.{AggregationMetadata, Check}
 import io.hydrosphere.sonar.utils.BooleanOps._
 import io.hydrosphere.sonar.utils.ExecutionInformationOps._
 import io.hydrosphere.sonar.utils.FutureOps._
@@ -23,8 +23,8 @@ import org.mongodb.scala.model.Filters.{lt, _}
 import org.mongodb.scala.model.UpdateOptions
 import org.mongodb.scala.model.Sorts.{descending, _}
 import org.mongodb.scala.model.Updates._
+import org.mongodb.scala.model.Aggregates._
 import org.mongodb.scala.{Document, MongoClient, MongoCollection, MongoDatabase}
-
 import java.util.Calendar
 import java.util.GregorianCalendar
 
@@ -33,10 +33,15 @@ object CheckStorageService {
   type CheckedRequest = (ExecutionInformation, Map[String, Seq[Check]])
 }
 
+// TODO: split the trait into checks/aggregates for slow/fast storages
 trait CheckStorageService[F[_]] {
   def saveCheckedRequest(request: ExecutionInformation, modelVersion: ModelVersion, checks: Map[String, Seq[Check]], metricChecks: Map[String, Check]): F[Unit]
   
   def getAggregateCount(modelVersionId: Long): F[Long]
+  
+  def getAggregateById(modelVersionId: Long, aggregationId: String): F[Option[AggregationMetadata]]
+  
+  def getAggregatesForSubsample(modelVersionId: Long, subsampleSize: Int): F[Seq[AggregationMetadata]]
 
   // TODO:  Map[String, Map[String, Map[String, Int]]] should be case class (maybe `Check`?)
   def enrichAggregatesWithBatchChecks(aggregationId: String, checks: Map[String, Map[String, Map[String, Int]]]): F[Unit]
@@ -66,6 +71,36 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
     val score = checkValues.sum.toDouble / checkValues.size
     if (score.isNaN) BsonNull() else BsonNumber(score)
     
+  }
+  
+  private def aggregateDocumentToAggregationMetadata(doc: Document): AggregationMetadata = AggregationMetadata(
+    id = doc.getObjectId("_id").toHexString,
+    modelVersionId = doc.getLong("_hs_model_version_id"),
+    firstCheckId = doc.getObjectId("_hs_first_id").toHexString,
+    lastCheckId = doc.getObjectId("_hs_last_id").toHexString,
+    modelName = doc.getString("_hs_model_name"),
+    requestCount = doc.getInteger("_hs_requests"),
+    startTimestamp = doc.getObjectId("_hs_first_id").getTimestamp,
+    endTimestamp = doc.getObjectId("_hs_last_id").getTimestamp,
+  )
+
+
+  override def getAggregateById(modelVersionId: Long, aggregationId: String): F[Option[AggregationMetadata]] =
+    aggregatedCheckCollection
+      .find(and(equal("_hs_model_version_id", modelVersionId), equal("_id", new ObjectId(aggregationId))))
+      .toFuture()
+      .liftToAsync[F]
+      .map(_.headOption.map(aggregateDocumentToAggregationMetadata))
+  
+
+  override def getAggregatesForSubsample(modelVersionId: Long, subsampleSize: Int): F[Seq[AggregationMetadata]] = {
+    val batchSize = 10 // TODO: configure
+    val count = math.ceil(subsampleSize.toDouble / batchSize.toDouble).toInt
+    aggregatedCheckCollection
+      .aggregate(List(filter(and(equal("_hs_model_version_id", modelVersionId), equal("_hs_requests", batchSize))), sample(count)))
+      .toFuture()
+      .liftToAsync[F]
+      .map(_.map(aggregateDocumentToAggregationMetadata))
   }
   
   override def getPreviousAggregate(modelVersionId: Long, nextAggregationId: String): F[Option[Document]] = {
@@ -158,6 +193,7 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
   // TODO: refactor (may be create more typed data structures for enrcihed data and for aggregations)
   override def saveCheckedRequest(ei: ExecutionInformation, modelVersion: ModelVersion, checks: Map[String, Seq[Check]], metricChecks: Map[String, Check]): F[Unit] = {
     logger.info(s"${modelVersion.id} saveCheckedRequest with ${checks.size} checks and ${metricChecks.size} metrics")
+    println(metricChecks)
     case class ByFieldChecks(checks: Seq[(String, BsonValue)], aggregates: Seq[(String, BsonValue)])
     
     def tensorDataToBson(tensorProto: TensorProto): BsonValue = {
@@ -296,7 +332,6 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
       ("_hs_day" -> BsonNumber(calendar.get(Calendar.DAY_OF_MONTH))) :+
       ("_id" -> objectId)
     val insertDocument = Document(bsonChecks)
-    
     
     val increments = maybeBsonChecks.map(_.aggregates).getOrElse(Seq.empty) ++ metricChecks.flatMap(check => Seq(s"_hs_metrics.${check._2.description}.checked" -> BsonNumber(1), s"_hs_metrics.${check._2.description}.passed" -> BsonNumber(check._2.check.toInt))) :+ ("_hs_requests" -> BsonNumber(1))
     val aggregateQuery = Document(

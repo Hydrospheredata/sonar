@@ -62,8 +62,8 @@ object Dependencies {
       new MetricSpecServiceInterpreter[F](as)
     }
 
-  def httpService[F[_]: Effect](metricSpecService: MetricSpecService[F], profileStorageService: ProfileStorageService[F], modelDataService: ModelDataService[F], batchProfileService: TrainingProfileService[F, fs2.Stream], checkStorageService: CheckStorageService[F])(implicit cs: ContextShift[F]): F[HttpService[F]] =
-    Effect[F].delay(new HttpService[F](metricSpecService, profileStorageService, modelDataService, batchProfileService, checkStorageService))
+  def httpService[F[_]: Effect](metricSpecService: MetricSpecService[F], profileStorageService: ProfileStorageService[F], modelDataService: ModelDataService[F], batchProfileService: TrainingProfileService[F, fs2.Stream], checkStorageService: CheckStorageService[F], checkSlowStorageService: CheckSlowStorageService[F])(implicit cs: ContextShift[F]): F[HttpService[F]] =
+    Effect[F].delay(new HttpService[F](metricSpecService, profileStorageService, modelDataService, batchProfileService, checkStorageService, checkSlowStorageService))
   
   def modelDataService[F[_]: Async](config: Configuration): F[ModelDataService[F]] = for {
     state <- Ref.of[F, Map[Long, ModelVersion]](Map.empty)
@@ -101,6 +101,11 @@ object Dependencies {
   def batchMetricService[F[_]: Async](configuration: Configuration, mongoClient: MongoClient, modelDataService: ModelDataService[IO], checkStorageService: CheckStorageService[IO]): F[BatchMetricService[F]] =
     Async[F].delay{
       new MongoParquetBatchMetricService[F](configuration, mongoClient, modelDataService, checkStorageService)
+    }
+  
+  def getCheckSlowStorageService[F[_]: Async](configuration: Configuration, modelDataService: ModelDataService[F], checkStorageService: CheckStorageService[F]): F[CheckSlowStorageService[F]] =
+    Async[F].delay {
+      new S3ParquetSlowStorageService[F](configuration, modelDataService, checkStorageService)
     }
 }
 
@@ -156,9 +161,10 @@ object Main extends IOApp with Logging {
     modelDataService <- Dependencies.modelDataService[IO](config)
     batchProfileService <- Dependencies.batchProfileService(config, profileStorageService, mongoClient)
     checkStorageService <- Dependencies.checkStorageService[IO](config, mongoClient)
-    httpService <- Dependencies.httpService[IO](metricSpecService, profileStorageService, modelDataService, batchProfileService, checkStorageService)
+    checkSlowService <- Dependencies.getCheckSlowStorageService[IO](config, modelDataService, checkStorageService)
+    httpService <- Dependencies.httpService[IO](metricSpecService, profileStorageService, modelDataService, batchProfileService, checkStorageService, checkSlowService)
     predictionService <- Dependencies.predictionService[IO](gatewayRpc)
-//    amService = Dependencies.alertManagerService(config, modelDataService)
+    //    amService = Dependencies.alertManagerService(config, modelDataService)
     writerService <- Dependencies.batchMetricService[IO](config, mongoClient, modelDataService, checkStorageService)
     
     _ <- writerService.start

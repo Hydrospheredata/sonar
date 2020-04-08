@@ -77,7 +77,8 @@ class HttpService[F[_] : Monad : Effect](
                                           profileStorageService: ProfileStorageService[F],
                                           modelDataService: ModelDataService[F],
                                           batchProfileService: TrainingProfileService[F, Fs2Stream],
-                                          checkStorageService: CheckStorageService[F]
+                                          checkStorageService: CheckStorageService[F],
+                                          checkSlowStorageService: CheckSlowStorageService[F]
 )(implicit cs: ContextShift[F]) extends Logging with Endpoint.Module[F] {
 
   implicit val genDevConfig: CirceExtraConfiguration =
@@ -227,8 +228,32 @@ class HttpService[F[_] : Monad : Effect](
       result <- batchProfileService.getTrainingData(modelVersionId)
     } yield Ok(result)
   }
+  
+  def getSlowChecks = get("monitoring" :: "slow" :: "checks" :: path[Long] :: path[String]) { (modelVersionId: Long, aggregationId: String) =>
+    for {
+      jsonStrings <- checkSlowStorageService.getChecksByAggregationId(modelVersionId, aggregationId)
+      jsons = jsonStrings.map((jsonString: String) =>
+        parse(jsonString) match {
+          case Left(value) => Json.Null
+          case Right(value) => value
+        }
+      )
+    } yield Ok(jsons)
+  }
+  
+  def getSubsample = get("monitoring" :: "checks" :: "subsample" :: path[Long] :: param[Int]("size")) { (modelVersionId: Long, size: Int) =>
+    for {
+      jsonStrings <- checkSlowStorageService.getCheckSubsample(modelVersionId, size)
+      jsons = jsonStrings.map((jsonString: String) =>
+        parse(jsonString) match {
+          case Left(value) => Json.Null
+          case Right(value) => value
+        }
+      )
+    } yield Ok(jsons)
+  }
 
-  def endpoints = (getTrainingData :+: getChecks :+: getCheckById :+: getCheckAggregates :+: getBuildInfo :+: healthCheck :+: getProfiles :+: getProfileNames :+: batchProfile :+: getBatchStatus :+: fileBatchProfile :+: s3BatchProfile :+: getChecksWithOffset) handle {
+  def endpoints = (getSubsample :+: getSlowChecks :+: getTrainingData :+: getChecks :+: getCheckById :+: getCheckAggregates :+: getBuildInfo :+: healthCheck :+: getProfiles :+: getProfileNames :+: batchProfile :+: getBatchStatus :+: fileBatchProfile :+: s3BatchProfile :+: getChecksWithOffset) handle {
     case e: io.finch.Error.NotParsed =>
       logger.warn(s"Can't parse json with message: ${e.getMessage()}")
       BadRequest(new RuntimeException(e))
