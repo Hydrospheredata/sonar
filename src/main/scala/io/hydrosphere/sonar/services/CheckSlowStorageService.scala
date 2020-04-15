@@ -2,8 +2,9 @@ package io.hydrosphere.sonar.services
 
 import java.util.Calendar
 
-import cats.effect.Async
+import cats.effect.{Async, IO, LiftIO, Resource}
 import cats.implicits._
+import cats.effect.implicits._
 import io.hydrosphere.sonar.config.Configuration
 import org.apache.hadoop.conf.{Configuration => HadoopConfiguration}
 import org.apache.avro.generic.{GenericData, GenericRecord}
@@ -36,11 +37,12 @@ class S3ParquetSlowStorageService[F[_]: Async](config: Configuration, modelDataS
       iter.asScala.map(_.get.objectName()).toSeq
     }
     (paths, actualRowsPerFile) = {
-      val rowsPerFile = size / allFilePaths.size
+      val actualSize = if (size < 1) 1 else if (size > BATCH_SIZE * 10) BATCH_SIZE * 10 else size
+      val rowsPerFile = actualSize / allFilePaths.size
       if (rowsPerFile >= BATCH_SIZE) {
         (allFilePaths, BATCH_SIZE)
-      } else if (rowsPerFile <= 1) {
-        (Random.shuffle(allFilePaths).take(size), 1)
+      } else if (rowsPerFile <= BATCH_SIZE / 2) { // TODO: need better number (configurable?)
+        (Random.shuffle(allFilePaths).take(actualSize / (BATCH_SIZE / 2)), BATCH_SIZE / 2)
       } else {
         (allFilePaths, rowsPerFile)
       }
@@ -61,7 +63,7 @@ class S3ParquetSlowStorageService[F[_]: Async](config: Configuration, modelDataS
     result <- getChecks(modelVersionId, paths)
   } yield result
   
-  private def getChecks(modelVersionId: Long, paths: Seq[String], max: Int = Int.MaxValue): F[Seq[String]] = Async[F].delay {
+  private def getChecks(modelVersionId: Long, paths: Seq[String], max: Int = Int.MaxValue): F[Seq[String]] = {
     // TODO: this is a copypaste
     val conf = new HadoopConfiguration()
     if (config.storage.accessKey.isDefined)
@@ -76,20 +78,54 @@ class S3ParquetSlowStorageService[F[_]: Async](config: Configuration, modelDataS
       conf.set("fs.s3a.impl", config.storage.s3Impl.get)
 
     val converter = new JsonAvroConverter()
-    paths.flatMap(path => {
-      val avroParquetReader = AvroParquetReader
-        .builder[GenericData.Record](HadoopInputFile.fromPath(new Path(path), conf))
-        .withConf(conf)
-        .build()
-      val r = Iterator
-        .continually(avroParquetReader.read())
-        .takeWhile(_ != null)
-        .take(max)
-        .map(converter.convertToJson)
-        .map(new String(_))
-        .toSeq
-      avroParquetReader.close()
-      r
+    
+    def fileResource(filePath: Path) = Resource.make(IO(AvroParquetReader.builder[GenericData.Record](HadoopInputFile.fromPath(filePath, conf)).withConf(conf).build()))(reader => IO(reader.close()))
+    
+    val tasks: IO[Seq[Seq[String]]] = paths.toList.traverse((path: String) => fileResource(new Path(path)).use { reader =>
+      IO {
+        Iterator
+          .continually(reader.read())
+          .takeWhile(_ != null)
+          .take(max)
+          .map(converter.convertToJson)
+          .map(new String(_))
+          .toSeq
+      }
     })
-  }
+    
+    LiftIO[F].liftIO(tasks).map(_.flatten)
+  } 
+    
+//    Async[F].delay {
+//    // TODO: this is a copypaste
+//    val conf = new HadoopConfiguration()
+//    if (config.storage.accessKey.isDefined)
+//      conf.set("fs.s3a.access.key", config.storage.accessKey.get)
+//    if (config.storage.secretKey.isDefined)
+//      conf.set("fs.s3a.secret.key", config.storage.secretKey.get)
+//    if (config.storage.endpoint.isDefined)
+//      conf.set("fs.s3a.endpoint", config.storage.endpoint.get)
+//    if (config.storage.pathStyleAccess.isDefined)
+//      conf.set("fs.s3a.path.style.access", config.storage.pathStyleAccess.get)
+//    if (config.storage.s3Impl.isDefined)
+//      conf.set("fs.s3a.impl", config.storage.s3Impl.get)
+//
+//    val converter = new JsonAvroConverter()
+////    val a: F[Int] = LiftIO[F].liftIO(IO.pure(1))
+//    paths.flatMap(path => {
+//      val avroParquetReader = AvroParquetReader
+//        .builder[GenericData.Record](HadoopInputFile.fromPath(new Path(path), conf))
+//        .withConf(conf)
+//        .build()
+//      val r = Iterator
+//        .continually(avroParquetReader.read())
+//        .takeWhile(_ != null)
+//        .take(max)
+//        .map(converter.convertToJson)
+//        .map(new String(_))
+//        .toSeq
+//      avroParquetReader.close()
+//      r
+//    })
+//  }
 }
