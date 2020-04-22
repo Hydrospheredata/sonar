@@ -60,6 +60,79 @@ class MongoParquetBatchMetricService[F[_]: Async](config: Configuration, mongoCl
       .liftToAsync[IO]
   }
   
+  private def numericalTypeToScala(field: ModelField, doc: Document): Seq[Double] = {
+    val maybeSeq = for {
+      shape <- field.shape
+      dataType <- field.eitherSubfieldOrDataType.toOption
+    } yield {
+      if (shape.isScalar) {
+        dataType match {
+          case DataType.DT_FLOAT =>         Seq[Double](doc.getDouble(field.name))
+          case DataType.DT_DOUBLE =>        Seq[Double](doc.getDouble(field.name))
+          case DataType.DT_COMPLEX64 =>     Seq[Double](doc.getDouble(field.name))
+          case DataType.DT_COMPLEX128 =>    Seq[Double](doc.getDouble(field.name))
+          case DataType.DT_INT32 =>         Seq(doc.getInteger(field.name).toDouble)
+          case DataType.DT_UINT8 =>         Seq(doc.getInteger(field.name).toDouble)
+          case DataType.DT_INT16 =>         Seq(doc.getInteger(field.name).toDouble)
+          case DataType.DT_INT8 =>          Seq(doc.getInteger(field.name).toDouble)
+          case DataType.DT_QINT8 =>         Seq(doc.getInteger(field.name).toDouble)
+          case DataType.DT_QUINT8 =>        Seq(doc.getInteger(field.name).toDouble)
+          case DataType.DT_QINT32 =>        Seq(doc.getInteger(field.name).toDouble)
+          case DataType.DT_BFLOAT16 =>      Seq(doc.getInteger(field.name).toDouble)
+          case DataType.DT_QINT16 =>        Seq(doc.getInteger(field.name).toDouble)
+          case DataType.DT_QUINT16 =>       Seq(doc.getInteger(field.name).toDouble)
+          case DataType.DT_UINT16 =>        Seq(doc.getInteger(field.name).toDouble)
+          case DataType.DT_HALF =>          Seq(doc.getInteger(field.name).toDouble)
+          case DataType.DT_UINT32 =>        Seq(doc.getInteger(field.name).toDouble)
+          case DataType.DT_INT64 =>         Seq(doc.getLong(field.name).toDouble)
+          case DataType.DT_UINT64 =>        Seq(doc.getLong(field.name).toDouble)
+          case DataType.DT_INVALID =>       Seq.empty
+          case DataType.DT_BOOL =>          Seq.empty
+          case DataType.DT_STRING =>        Seq.empty
+          case DataType.DT_RESOURCE =>      Seq.empty
+          case DataType.DT_VARIANT =>       Seq.empty
+          case DataType.DT_MAP =>           Seq.empty
+          case DataType.Unrecognized(_) =>  Seq.empty
+        }
+      } else {
+        doc.get[BsonArray](field.name) match {
+          case Some(bsonArray) => bsonArray.asScala.flatMap { value =>
+            dataType match {
+              case DataType.DT_FLOAT =>         Seq(value.asDouble().doubleValue())
+              case DataType.DT_DOUBLE =>        Seq(value.asDouble().doubleValue())
+              case DataType.DT_COMPLEX64 =>     Seq(value.asDouble().doubleValue())
+              case DataType.DT_COMPLEX128 =>    Seq(value.asDouble().doubleValue())
+              case DataType.DT_INT32 =>         Seq(value.asInt32().intValue().toDouble)
+              case DataType.DT_UINT8 =>         Seq(value.asInt32().intValue().toDouble)
+              case DataType.DT_INT16 =>         Seq(value.asInt32().intValue().toDouble)
+              case DataType.DT_INT8 =>          Seq(value.asInt32().intValue().toDouble)
+              case DataType.DT_QINT8 =>         Seq(value.asInt32().intValue().toDouble)
+              case DataType.DT_QUINT8 =>        Seq(value.asInt32().intValue().toDouble)
+              case DataType.DT_QINT32 =>        Seq(value.asInt32().intValue().toDouble)
+              case DataType.DT_BFLOAT16 =>      Seq(value.asInt32().intValue().toDouble)
+              case DataType.DT_QINT16 =>        Seq(value.asInt32().intValue().toDouble)
+              case DataType.DT_QUINT16 =>       Seq(value.asInt32().intValue().toDouble)
+              case DataType.DT_UINT16 =>        Seq(value.asInt32().intValue().toDouble)
+              case DataType.DT_HALF =>          Seq(value.asInt32().intValue().toDouble)
+              case DataType.DT_UINT32 =>        Seq(value.asInt32().intValue().toDouble)
+              case DataType.DT_INT64 =>         Seq(value.asInt64().longValue().toDouble)
+              case DataType.DT_UINT64 =>        Seq(value.asInt64().longValue().toDouble)
+              case DataType.DT_INVALID =>       Seq.empty
+              case DataType.DT_STRING =>        Seq.empty
+              case DataType.DT_BOOL =>          Seq.empty
+              case DataType.DT_RESOURCE =>      Seq.empty
+              case DataType.DT_VARIANT =>       Seq.empty
+              case DataType.DT_MAP =>           Seq.empty
+              case DataType.Unrecognized(_) =>  Seq.empty
+            }
+          } 
+          case None => Seq.empty
+        }
+      }
+    }
+    maybeSeq.getOrElse(Seq.empty)
+  }
+  
 
   private def onNewDoc(doc: ChangeStreamDocument[Document]): Unit = {
     val fullDoc = doc.getFullDocument
@@ -76,9 +149,9 @@ class MongoParquetBatchMetricService[F[_]: Async](config: Configuration, mongoCl
       batchChecks: Map[String, Map[String, Map[String, Int]]] = fields.flatMap(field => field.profile match {
         case NUMERICAL => {
           // TODO: not safe Option.get
-          val data = checks
+          val data = checks.map(x => numericalTypeToScala(field, x))
             // TODO: get right numerical types
-            .map(x => if (field.shape.get.isScalar) Seq[Double](x.getLong(field.name).toDouble) else x.get[BsonArray](field.name).get.asScala.map(_.asDouble().doubleValue()))
+//            .map(x => if (field.shape.get.isScalar) Seq[Double](x.getLong(field.name).toDouble) else x.get[BsonArray](field.name).get.asScala.map(_.asDouble().doubleValue()))
           val transposed = CollectionOps.safeTranspose(data)
           // TODO: use training distribution
           val ksFn = (sample: NonEmptyList[Double]) => KolmogorovSmirnovTest.test(sample, Statistics.generateDistribution(Statistics.Distribution.Normal, 100))
