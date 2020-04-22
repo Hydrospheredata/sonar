@@ -40,26 +40,32 @@ class MonitoringServiceGrpcApi(recipient: ActorRef[SonarSupervisor.Message], pro
             // TODO: move to separated class
             metricChecks <- maybeRequest match {
               case Some(req) => metricSpecs.collect {
-                case MetricSpec(id, name, _, config) =>
-                  predictionService
-                    // TODO: unsafe Option.get
-                    .predict(config.get.servable.get.name, req)
-                    .flatMap { predictResponse =>
-                      val value = predictResponse.outputs.get("value").flatMap(_.doubleVal.headOption).getOrElse(0d)
-                      config.get.threshold match {
-                        case Some(thresholdConfig) => IO.pure[(String, Check)](name -> (thresholdConfig.comparison match {
-                          case EQ => Check(value == thresholdConfig.value, name, value, thresholdConfig.value, Some(id))
-                          case NOT_EQ => Check(value != thresholdConfig.value, name, value, thresholdConfig.value, Some(id))
-                          case GREATER => Check(value > thresholdConfig.value, name, value, thresholdConfig.value, Some(id))
-                          case LESS => Check(value < thresholdConfig.value, name, value, thresholdConfig.value, Some(id))
-                          case GREATER_EQ => Check(value >= thresholdConfig.value, name, value, thresholdConfig.value, Some(id))
-                          case LESS_EQ => Check(value <= thresholdConfig.value, name, value, thresholdConfig.value, Some(id))
-                          case Unrecognized(value) => throw new RuntimeException(s"Unrecognized cmp operator $value")
-                        }))
-                        case None => IO.raiseError[(String, Check)](new RuntimeException(s"${md.modelVersionId} cmpOperator is empty"))
+                case MetricSpec(id, name, _, config) => {
+                  val maybeTask = for {
+                    conf <- config
+                    servable <- conf.servable
+                  } yield {
+                    predictionService
+                      .predict(servable.name, req)
+                      .flatMap { predictResponse =>
+                        val value = predictResponse.outputs.get("value").flatMap(_.doubleVal.headOption).getOrElse(0d)
+                        config.get.threshold match {
+                          case Some(thresholdConfig) => IO.pure[(String, Check)](name -> (thresholdConfig.comparison match {
+                            case EQ => Check(value == thresholdConfig.value, name, value, thresholdConfig.value, Some(id))
+                            case NOT_EQ => Check(value != thresholdConfig.value, name, value, thresholdConfig.value, Some(id))
+                            case GREATER => Check(value > thresholdConfig.value, name, value, thresholdConfig.value, Some(id))
+                            case LESS => Check(value < thresholdConfig.value, name, value, thresholdConfig.value, Some(id))
+                            case GREATER_EQ => Check(value >= thresholdConfig.value, name, value, thresholdConfig.value, Some(id))
+                            case LESS_EQ => Check(value <= thresholdConfig.value, name, value, thresholdConfig.value, Some(id))
+                            case Unrecognized(value) => throw new RuntimeException(s"Unrecognized cmp operator $value")
+                          }))
+                          case None => IO.raiseError[(String, Check)](new RuntimeException(s"${md.modelVersionId} cmpOperator is empty"))
+                        }
                       }
-                    }
-                    .attempt
+                      .attempt
+                  }
+                  maybeTask.getOrElse(IO.pure(Left(new Exception("Can't find servable for monitoring model"))))
+                }
               }
                 // TODO: process errors
                 .sequence.map(_.map {
