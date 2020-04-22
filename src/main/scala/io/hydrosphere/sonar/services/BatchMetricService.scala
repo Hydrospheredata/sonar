@@ -18,6 +18,7 @@ import eu.timepit.refined.auto._
 import io.hydrosphere.serving.contract.model_field.ModelField
 import io.hydrosphere.serving.manager.data_profile_types.DataProfileType
 import io.hydrosphere.serving.tensorflow.types.DataType
+import io.hydrosphere.sonar.Logging
 import io.minio.MinioClient
 import org.apache.avro.{Schema, SchemaBuilder}
 import org.apache.avro.generic.GenericData.Record
@@ -41,7 +42,7 @@ trait BatchMetricService[F[_]] {
   def start: F[Unit]
 }
 
-class MongoParquetBatchMetricService[F[_]: Async](config: Configuration, mongoClient: MongoClient, modelDataService: ModelDataService[IO], checkStorageService: CheckStorageService[IO]) extends BatchMetricService[F] {
+class MongoParquetBatchMetricService[F[_]: Async](config: Configuration, mongoClient: MongoClient, modelDataService: ModelDataService[IO], checkStorageService: CheckStorageService[IO]) extends BatchMetricService[F] with Logging {
   
   case object FirstAggregationError extends Throwable
 
@@ -138,7 +139,7 @@ class MongoParquetBatchMetricService[F[_]: Async](config: Configuration, mongoCl
             writer.write(record)
           }
           writer.close()
-          println(s"Written ${records.size} rows to ${path}")
+          logger.info(s"Written ${records.size} rows to ${path}")
         })
         
         "ok"
@@ -147,9 +148,8 @@ class MongoParquetBatchMetricService[F[_]: Async](config: Configuration, mongoCl
     program.unsafeRunAsync {
       case Left(value) => value match {
         case FirstAggregationError => // do nothing
-        case _ => 
-          println(s"EEEEEEEEEEEROR $value")
-          value.printStackTrace()
+        case _ =>
+          logger.error("Error while processing batch jobs", value)
       }
       case Right(value) => // do nothing
     }
@@ -159,7 +159,7 @@ class MongoParquetBatchMetricService[F[_]: Async](config: Configuration, mongoCl
     Sync[F].delay {
       aggregatedCheckCollection.watch(Seq(`match`(equal("operationType", "insert")))).subscribe(
         onNewDoc _,
-        (t: Throwable) => println(s"ERROROROROROR $t"),
+        (t: Throwable) => logger.error("Error while watching for new batches", t),
         () => println("DONENENENENENEN")
       )
       Unit

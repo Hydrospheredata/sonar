@@ -252,8 +252,20 @@ class HttpService[F[_] : Monad : Effect](
       )
     } yield Ok(jsons)
   }
+  
+  def getComparingChecks = get("monitoring" :: "checks" :: "comparision" :: path[Long] :: path[String] :: path[Long]) { (originalModelVersionId: Long, aggregationId: String, comparingModelVersionId: Long) =>
+    for {
+      jsonStrings <- checkStorageService.getChecksForComparision(originalModelVersionId, aggregationId, comparingModelVersionId)
+      jsons = jsonStrings.map((jsonString: String) =>
+        parse(jsonString) match {
+          case Left(value) => Json.Null
+          case Right(value) => value
+        }
+      )
+    } yield Ok(jsons)
+  } 
 
-  def endpoints = (getSubsample :+: getSlowChecks :+: getTrainingData :+: getChecks :+: getCheckById :+: getCheckAggregates :+: getBuildInfo :+: healthCheck :+: getProfiles :+: getProfileNames :+: batchProfile :+: getBatchStatus :+: fileBatchProfile :+: s3BatchProfile :+: getChecksWithOffset) handle {
+  def endpoints = (getComparingChecks :+: getSubsample :+: getSlowChecks :+: getTrainingData :+: getChecks :+: getCheckById :+: getCheckAggregates :+: getBuildInfo :+: healthCheck :+: getProfiles :+: getProfileNames :+: batchProfile :+: getBatchStatus :+: fileBatchProfile :+: s3BatchProfile :+: getChecksWithOffset) handle {
     case e: io.finch.Error.NotParsed =>
       logger.warn(s"Can't parse json with message: ${e.getMessage()}")
       BadRequest(new RuntimeException(e))

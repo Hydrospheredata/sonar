@@ -16,6 +16,7 @@ import io.hydrosphere.sonar.utils.ExecutionInformationOps._
 import io.hydrosphere.sonar.utils.FutureOps._
 import io.hydrosphere.sonar.utils.ModelFieldOps._
 import io.hydrosphere.sonar.utils.TensorProtoOps._
+import io.hydrosphere.sonar.utils.mongo.ObservableExt._
 import org.bson.json.{JsonWriterSettings, StrictJsonWriter}
 import org.bson.types.ObjectId
 import org.mongodb.scala.bson.{BsonArray, BsonBoolean, BsonDateTime, BsonDocument, BsonNull, BsonNumber, BsonObjectId, BsonString, BsonValue}
@@ -42,6 +43,8 @@ trait CheckStorageService[F[_]] {
   def getAggregateById(modelVersionId: Long, aggregationId: String): F[Option[AggregationMetadata]]
   
   def getAggregatesForSubsample(modelVersionId: Long, subsampleSize: Int): F[Seq[AggregationMetadata]]
+  
+  def getChecksForComparision(originalModelVersion: Long, aggregationId: String, comparedModelVersionId: Long): F[Seq[String]]
 
   // TODO:  Map[String, Map[String, Map[String, Int]]] should be case class (maybe `Check`?)
   def enrichAggregatesWithBatchChecks(aggregationId: String, checks: Map[String, Map[String, Map[String, Int]]]): F[Unit]
@@ -72,7 +75,24 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
     if (score.isNaN) BsonNull() else BsonNumber(score)
     
   }
-  
+
+
+  override def getChecksForComparision(originalModelVersion: Long, aggregationId: String, comparedModelVersionId: Long): F[Seq[String]] = for {
+    mayBeAggregate <- getAggregateById(originalModelVersion, aggregationId)
+    aggregate <- mayBeAggregate match {
+      case Some(value) => value.pure[F]
+      case None => Async[F].raiseError[AggregationMetadata](new Exception(s"aggregation id $aggregationId does not exist"))
+    }
+    requestIds <- checkCollection.find(and(equal("_hs_model_version_id", originalModelVersion), and(gte("_id", BsonObjectId(aggregate.firstCheckId)), lte("_id", BsonObjectId(aggregate.lastCheckId))))).toF[F].map(_.map(doc => doc.getString("_hs_request_id")))
+    _ <- Async[F].delay(println(requestIds))
+    checks <- checkCollection.find(and(equal("_hs_model_version_id", comparedModelVersionId), in("_hs_request_id", requestIds: _*))).toF[F].map(_.map(_.toJson(
+      settings = JsonWriterSettings
+        .builder()
+        .objectIdConverter((value: ObjectId, writer: StrictJsonWriter) => writer.writeString(value.toHexString))
+        .build()
+    )))
+  } yield checks
+
   private def aggregateDocumentToAggregationMetadata(doc: Document): AggregationMetadata = AggregationMetadata(
     id = doc.getObjectId("_id").toHexString,
     modelVersionId = doc.getLong("_hs_model_version_id"),
