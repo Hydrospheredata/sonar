@@ -48,7 +48,7 @@ object TrainingProfileService {
   }
 }
 
-class TrainingProfileServiceInterpreter(config: Configuration, state: Ref[IO, Map[Long, TrainingProfileService.ProcessingStatus]], profileStorageService: ProfileStorageService[IO], mongoClient: MongoClient)(implicit cs: ContextShift[IO]) extends TrainingProfileService[IO, fs2.Stream] with Logging {
+class TrainingProfileServiceInterpreter(config: Configuration, state: Ref[IO, Map[Long, TrainingProfileService.ProcessingStatus]], profileStorageService: ProfileStorageService[IO], mongoClient: MongoClient, autoODService: AutoODService[IO])(implicit cs: ContextShift[IO]) extends TrainingProfileService[IO, fs2.Stream] with Logging {
 
   import TrainingProfileService._
 
@@ -106,6 +106,7 @@ class TrainingProfileServiceInterpreter(config: Configuration, state: Ref[IO, Ma
     val parts = path.replaceAll("s3://", "").split("/")
     val document = TrainingDataDocument(path, modelVersion)
     fs2.Stream.eval(IO.suspend(trainingDataCollection.insertOne(document).toF[IO])) >>
+      fs2.Stream.eval(IO.suspend(autoODService.launchAutoOD(modelVersion.id, path))) >>
       readS3FileMultipart[IO](parts.head, parts.tail.mkString("/"), 2048)
   }
 
@@ -127,6 +128,7 @@ class TrainingProfileServiceInterpreter(config: Configuration, state: Ref[IO, Ma
     }
     fs2.Stream.eval(s3CopyProgram) >>
       fs2.Stream.eval(IO.suspend(trainingDataCollection.insertOne(document).toF[IO])) >>
+      fs2.Stream.eval(IO.suspend(autoODService.launchAutoOD(modelVersion.id, fullS3Path))) >>
       file.readAll[IO](Paths.get(path), ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(2)), 2048)
   }
 

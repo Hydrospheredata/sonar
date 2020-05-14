@@ -24,7 +24,7 @@ import io.hydrosphere.sonar.actors.{MetricSpecDiscoverer, SonarSupervisor}
 import io.hydrosphere.sonar.config.Configuration
 import io.hydrosphere.sonar.endpoints.{HttpService, MonitoringServiceGrpcApi}
 import io.hydrosphere.sonar.services._
-import io.hydrosphere.sonar.utils.GatewayServiceRpc
+import io.hydrosphere.sonar.utils.{AutoODServiceRpc, GatewayServiceRpc}
 import org.mongodb.scala.{MongoClient, MongoClientSettings}
 import org.slf4j.bridge.SLF4JBridgeHandler
 import pureconfig.generic.auto._
@@ -78,11 +78,11 @@ object Dependencies {
     instance <- Async[F].delay(new ProfileStorageServiceMongoInterpreter[F](config, state, client))
   } yield instance
   
-  def batchProfileService(config: Configuration, profileStorageService: ProfileStorageService[IO], mongoClient: MongoClient): IO[TrainingProfileService[IO, fs2.Stream]] = {
+  def batchProfileService(config: Configuration, profileStorageService: ProfileStorageService[IO], mongoClient: MongoClient, autoODService: AutoODService[IO]): IO[TrainingProfileService[IO, fs2.Stream]] = {
     implicit val cs: ContextShift[IO] = IO.contextShift(ExecutionContext.fromExecutor(Executors.newFixedThreadPool(10)))
     for {
       state <- Ref.of[IO, Map[Long, TrainingProfileService.ProcessingStatus]](Map.empty)
-      instance <- IO.delay(new TrainingProfileServiceInterpreter(config, state, profileStorageService, mongoClient))
+      instance <- IO.delay(new TrainingProfileServiceInterpreter(config, state, profileStorageService, mongoClient, autoODService))
     } yield instance
   }
 
@@ -107,6 +107,8 @@ object Dependencies {
     Async[F].delay {
       new S3ParquetSlowStorageService[F](configuration, modelDataService, checkStorageService)
     }
+  
+  def autoODService[F[_]: Async](client: AutoODServiceRpc[F]): F[AutoODService[F]] = Async[F].delay(new GRPCAutoODService[F](client))
 }
 
 object Main extends IOApp with Logging {
@@ -155,11 +157,14 @@ object Main extends IOApp with Logging {
     discoveryRpcStub <- createDiscoveryStub[IO](grpcChannel)
 
     discoveryAS <- discoveryActorSystem[IO](3.minute, discoveryRpcStub)
+    
+    autoODRpc = AutoODServiceRpc.make[IO](grpcChannel)
 
+    autoOdService <- Dependencies.autoODService[IO](autoODRpc) 
     metricSpecService <- Dependencies.metricService[IO](discoveryAS, 3.minutes)
     profileStorageService <- Dependencies.profileStorageService[IO](config, mongoClient)
     modelDataService <- Dependencies.modelDataService[IO](config)
-    batchProfileService <- Dependencies.batchProfileService(config, profileStorageService, mongoClient)
+    batchProfileService <- Dependencies.batchProfileService(config, profileStorageService, mongoClient, autoOdService)
     checkStorageService <- Dependencies.checkStorageService[IO](config, mongoClient)
     checkSlowService <- Dependencies.getCheckSlowStorageService[IO](config, modelDataService, checkStorageService)
     httpService <- Dependencies.httpService[IO](metricSpecService, profileStorageService, modelDataService, batchProfileService, checkStorageService, checkSlowService)
