@@ -38,13 +38,17 @@ class S3ParquetSlowStorageService[F[_]: Async](config: Configuration, modelDataS
     }
     (paths, actualRowsPerFile) = {
       val actualSize = if (size < 1) 1 else if (size > BATCH_SIZE * 10) BATCH_SIZE * 10 else size
-      val rowsPerFile = actualSize / allFilePaths.size
-      if (rowsPerFile >= BATCH_SIZE) {
-        (allFilePaths, BATCH_SIZE)
-      } else if (rowsPerFile <= BATCH_SIZE / 2) { // TODO: need better number (configurable?)
-        (Random.shuffle(allFilePaths).take(actualSize / (BATCH_SIZE / 2)), BATCH_SIZE / 2)
+      if (allFilePaths.isEmpty) {
+        (Seq.empty, 0)
       } else {
-        (allFilePaths, rowsPerFile)
+        val rowsPerFile = actualSize / allFilePaths.size
+        if (rowsPerFile >= BATCH_SIZE) {
+          (allFilePaths, BATCH_SIZE)
+        } else if (rowsPerFile <= BATCH_SIZE / 2) { // TODO: need better number (configurable?)
+          (Random.shuffle(allFilePaths).take(actualSize / (BATCH_SIZE / 2)), BATCH_SIZE / 2)
+        } else {
+          (allFilePaths, rowsPerFile)
+        }  
       }
     }
     result <- getChecks(modelVersionId, paths.map(s"s3a://${config.storage.bucket}/" + _), actualRowsPerFile)
