@@ -46,8 +46,8 @@ then
     [[ ! -z "$ALERTING_MANAGER_URL" ]] && APP_OPTS="$APP_OPTS -Dalerting.alert-manager-url=$ALERTING_MANAGER_URL"
     [[ ! -z "$ALERTING_FRONTEND_URL" ]] && APP_OPTS="$APP_OPTS -Dalerting.frontend-url=$ALERTING_FRONTEND_URL"
     
-    [[ ! -z "$STORAGE_BUCKET" ]] && APP_OPTS="$APP_OPTS -Dstorage.bucket=$FEATURE_LAKE_BUCKET"
-    [[ ! -z "$STORAGE_CREATE_BUCKET" ]] && APP_OPTS="$APP_OPTS -Dstorage.create-bucket=$FEATURE_LAKE_CREATE_BUCKET"
+    [[ ! -z "$FEATURE_LAKE_BUCKET" ]] && APP_OPTS="$APP_OPTS -Dstorage.bucket=$FEATURE_LAKE_BUCKET"
+    [[ ! -z "$FEATURE_LAKE_CREATE_BUCKET" ]] && APP_OPTS="$APP_OPTS -Dstorage.create-bucket=$FEATURE_LAKE_CREATE_BUCKET"
     
     [[ ! -z "${STORAGE_ACCESS_KEY}" ]] && APP_OPTS="$APP_OPTS -Dstorage.access-key=${STORAGE_ACCESS_KEY}"
     [[ ! -z "${STORAGE_SECRET_KEY}" ]] && APP_OPTS="$APP_OPTS -Dstorage.secret-key=${STORAGE_SECRET_KEY}" 
