@@ -8,17 +8,27 @@ import io.hydrosphere.serving.manager.grpc.entities.MetricSpec
 import io.hydrosphere.serving.manager.grpc.entities.ThresholdConfig.CmpOp._
 import io.hydrosphere.serving.monitoring.api.ExecutionInformation
 import io.hydrosphere.serving.monitoring.api.MonitoringServiceGrpc.MonitoringService
+import io.hydrosphere.serving.monitoring.metadata.ExecutionMetadata
+import io.hydrosphere.serving.tensorflow.tensor.TensorProto
 import io.hydrosphere.sonar.Logging
 import io.hydrosphere.sonar.actors.SonarSupervisor
-import io.hydrosphere.sonar.services.{CheckStorageService, MetricSpecService, ModelDataService, PredictionService, ProfileStorageService}
+import io.hydrosphere.sonar.services._
 import io.hydrosphere.sonar.terms.{Check, ProfileSourceKind}
-import io.hydrosphere.sonar.utils.ExecutionInformationOps._
 import io.hydrosphere.sonar.utils.checks.ProfileChecks
 
-import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.Future
 
-class MonitoringServiceGrpcApi(recipient: ActorRef[SonarSupervisor.Message], profileStorageService: ProfileStorageService[IO], metricSpecService: MetricSpecService[IO], predictionService: PredictionService[IO], checkStorageService: CheckStorageService[IO], modelDataService: ModelDataService[IO]) extends MonitoringService with Logging {
+class MonitoringServiceGrpcApi(
+  recipient: ActorRef[SonarSupervisor.Message],
+  profileStorageService: ProfileStorageService[IO],
+  metricSpecService: MetricSpecService[IO],
+  predictionService: PredictionService[IO],
+  checkStorageService: CheckStorageService[IO],
+  modelDataService: ModelDataService[IO],
+  alertService: AlertService[IO]
+) extends MonitoringService with Logging {
+
   override def analyze(executionInformation: ExecutionInformation): Future[Empty] = {
     Future {
       recipient ! SonarSupervisor.Request(executionInformation)
@@ -39,44 +49,10 @@ class MonitoringServiceGrpcApi(recipient: ActorRef[SonarSupervisor.Message], pro
             metricSpecs <- metricSpecService.getMetricSpecsByModelVersion(md.modelVersionId)
             // TODO: move to separated class
             metricChecks <- maybeRequest match {
-              case Some(req) => metricSpecs.collect {
-                case MetricSpec(id, name, _, config) => {
-                  val maybeTask = for {
-                    conf <- config
-                    servable <- conf.servable
-                  } yield {
-                    predictionService
-                      .predict(servable.name, req)
-                      .flatMap { predictResponse =>
-                        val value = predictResponse.outputs.get("value").flatMap(_.doubleVal.headOption).getOrElse(0d)
-                        config.get.threshold match {
-                          case Some(thresholdConfig) => IO.pure[(String, Check)](name -> (thresholdConfig.comparison match {
-                            case EQ => Check(value == thresholdConfig.value, name, value, thresholdConfig.value, Some(id))
-                            case NOT_EQ => Check(value != thresholdConfig.value, name, value, thresholdConfig.value, Some(id))
-                            case GREATER => Check(value > thresholdConfig.value, name, value, thresholdConfig.value, Some(id))
-                            case LESS => Check(value < thresholdConfig.value, name, value, thresholdConfig.value, Some(id))
-                            case GREATER_EQ => Check(value >= thresholdConfig.value, name, value, thresholdConfig.value, Some(id))
-                            case LESS_EQ => Check(value <= thresholdConfig.value, name, value, thresholdConfig.value, Some(id))
-                            case Unrecognized(value) => throw new RuntimeException(s"Unrecognized cmp operator $value")
-                          }))
-                          case None => IO.raiseError[(String, Check)](new RuntimeException(s"${md.modelVersionId} cmpOperator is empty"))
-                        }
-                      }
-                      .attempt
-                  }
-                  maybeTask.getOrElse(IO.pure(Left(new Exception("Can't find servable for monitoring model"))))
-                }
-              }
-                // TODO: process errors
-                .sequence.map(_.map {
-                case Left(value) =>
-                  logger.error(s"Error while getting metrics", value)
-                  Left(value)
-                case Right(value) =>
-                  Right(value)
-              }.filter(_.isRight).map(_.right.get).toMap[String, Check])
-              case None => IO.pure(Map.empty[String, Check])
+              case Some(req) => processRequest(req, metricSpecs, md)
+              case None => Map.empty[String, Check].pure[IO]
             }
+            _ <- alertService.sendChecks(executionInformation, modelVersion, profileChecks, metricChecks).attempt // TODO(bulat): clarify if we need to ignore failures
             _ <- checkStorageService.saveCheckedRequest(executionInformation, modelVersion, profileChecks, metricChecks)
           } yield Unit
         case None => IO.unit // TODO: do something 
@@ -88,4 +64,43 @@ class MonitoringServiceGrpcApi(recipient: ActorRef[SonarSupervisor.Message], pro
       Empty()
     }
   }
+
+  private def processRequest(req: Map[String, TensorProto], metricSpecs: List[MetricSpec], metadata: ExecutionMetadata) = {
+    metricSpecs.traverse {
+      case MetricSpec(id, name, _, config) =>
+        val maybeTask = for {
+          conf <- config
+          servable <- conf.servable
+        } yield {
+          predictionService
+            .predict(servable.name, req)
+            .flatMap { predictResponse =>
+              val value = predictResponse.outputs.get("value").flatMap(_.doubleVal.headOption).getOrElse(0d)
+              config.get.threshold match {
+                case Some(thresholdConfig) => IO.pure[(String, Check)](name -> (thresholdConfig.comparison match {
+                  case EQ => Check(value == thresholdConfig.value, name, value, thresholdConfig.value, Some(id))
+                  case NOT_EQ => Check(value != thresholdConfig.value, name, value, thresholdConfig.value, Some(id))
+                  case GREATER => Check(value > thresholdConfig.value, name, value, thresholdConfig.value, Some(id))
+                  case LESS => Check(value < thresholdConfig.value, name, value, thresholdConfig.value, Some(id))
+                  case GREATER_EQ => Check(value >= thresholdConfig.value, name, value, thresholdConfig.value, Some(id))
+                  case LESS_EQ => Check(value <= thresholdConfig.value, name, value, thresholdConfig.value, Some(id))
+                  case Unrecognized(value) => throw new RuntimeException(s"Unrecognized cmp operator $value")
+                }))
+                case None => IO.raiseError[(String, Check)](new RuntimeException(s"${metadata.modelVersionId} cmpOperator is empty"))
+              }
+            }
+            .attempt
+        }
+        maybeTask.getOrElse(IO.pure(Left(new Exception("Can't find servable for monitoring model"))))
+    }
+      // TODO: process errors
+      .map(_.map {
+        case Left(value) =>
+          logger.error(s"Error while getting metrics", value)
+          Left(value)
+        case Right(value) =>
+          Right(value)
+      }.collect { case Right(value) => value }.toMap[String, Check])
+  }
+
 }
