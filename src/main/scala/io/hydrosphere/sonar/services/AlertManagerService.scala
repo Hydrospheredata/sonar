@@ -16,7 +16,7 @@ import io.circe.refined._
 import io.circe.syntax._
 import io.hydrosphere.serving.manager.grpc.entities.ModelVersion
 import io.hydrosphere.serving.monitoring.api.ExecutionInformation
-import io.hydrosphere.sonar.{Logging, URIString, URLString}
+import io.hydrosphere.sonar.{Logging, URLString}
 import io.hydrosphere.sonar.terms.Check
 import io.hydrosphere.sonar.utils.FutureOps._
 
@@ -39,7 +39,7 @@ class NoopAlertService[F[_]](implicit F: Applicative[F]) extends AlertService[F]
 }
 
 class PrometheusAMService[F[_]](
-  amUrl: URIString,
+  amUrl: String,
   baseUrl: URLString)(
   implicit F: Async[F]) extends AlertService[F] with Logging {
   val alertmanagerClient: Service[Seq[AMAlert], Response] = Http.client

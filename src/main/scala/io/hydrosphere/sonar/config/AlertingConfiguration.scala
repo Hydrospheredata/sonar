@@ -1,6 +1,6 @@
 package io.hydrosphere.sonar.config
 
-import io.hydrosphere.sonar.{URIString, URLString}
+import io.hydrosphere.sonar.URLString
 
 // TODO(bulat): alertManagerUrl is actually URI. Finagle client doesn't accept protocol in Service constructor
 /**
@@ -9,4 +9,4 @@ import io.hydrosphere.sonar.{URIString, URLString}
  * @param alertManagerUrl
  * @param frontendUrl
  */
-case class AlertingConfiguration(alertManagerUrl: URIString, frontendUrl: URLString)
+case class AlertingConfiguration(alertManagerUrl: String, frontendUrl: URLString)
