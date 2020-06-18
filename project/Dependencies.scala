@@ -75,12 +75,19 @@ object Dependencies {
     "org.apache.parquet" % "parquet-avro" % ParquetV
   )
 
+  val RefinedV = "0.9.14"
+  val refined: Seq[ModuleID]  = Seq (
+    "eu.timepit" %% "refined"                 % RefinedV,
+    "eu.timepit" %% "refined-cats"            % RefinedV,
+    "eu.timepit" %% "refined-pureconfig"      % RefinedV,
+    "io.circe"   %% "circe-refined"           % CirceV
+  )
+
   val projectDeps: Seq[ModuleID] = 
-    test ++ logback ++ circe ++ finch ++ grpc ++ pureconfig ++ akka ++ cats ++ fs2 ++ hadoop ++ parquet ++
+    test ++ logback ++ circe ++ finch ++ grpc ++ pureconfig ++ akka ++ cats ++ fs2 ++ hadoop ++ parquet ++ refined ++
     Seq(
       "net.openhft" % "zero-allocation-hashing" % "0.8",
       "org.scalanlp" %% "breeze" % "0.13.2",
-      "eu.timepit" %% "refined" % "0.9.3",
       "com.beachape" %% "enumeratum" % "1.5.13",
       "org.mongodb.scala" %% "mongo-scala-driver" % "2.5.0",
       "com.amazonaws" % "aws-java-sdk-bundle" % "1.11.456",

@@ -10,14 +10,13 @@ import com.twitter.finagle.http.{Method, Request, Response}
 import com.twitter.finagle.{Http, Service}
 import com.twitter.io.Buf
 import eu.timepit.refined._
-import eu.timepit.refined.api.Refined
 import eu.timepit.refined.string._
 import io.circe.generic.auto._
+import io.circe.refined._
 import io.circe.syntax._
 import io.hydrosphere.serving.manager.grpc.entities.ModelVersion
 import io.hydrosphere.serving.monitoring.api.ExecutionInformation
-import io.hydrosphere.sonar.Logging
-import io.hydrosphere.sonar.services.AlertService._
+import io.hydrosphere.sonar.{Logging, URLString}
 import io.hydrosphere.sonar.terms.Check
 import io.hydrosphere.sonar.utils.FutureOps._
 
@@ -42,7 +41,7 @@ class NoopAlertService[F[_]](implicit F: Applicative[F]) extends AlertService[F]
 class PrometheusAMService[F[_]](
   amUrl: URLString,
   baseUrl: URLString)(
-  implicit F: Async[F]) extends AlertService[F] {
+  implicit F: Async[F]) extends AlertService[F] with Logging {
   val alertmanagerClient: Service[Seq[AMAlert], Response] = Http.client
     .withSessionQualifier.noFailFast.newService(amUrl.toString())
     .map[Seq[AMAlert]] { alerts =>
@@ -93,6 +92,7 @@ class PrometheusAMService[F[_]](
         case x =>
           val errorMsg = Buf.Utf8.unapply(response.content).getOrElse("<no error message>")
           val ex = AMException(s"Can't send metrics to $amUrl. Response $x: $errorMsg")
+          logger.debug(s"Can't send alerts to AlertManager", ex)
           F.raiseError[Unit](ex)
       }
     } yield ()
@@ -134,25 +134,21 @@ class PrometheusAMService[F[_]](
   }
 }
 
-object AlertService extends Logging {
-  type URLString = String Refined Url
-
-  case class AMException(msg: String) extends Throwable {
-    override def getMessage: String = msg
-  }
-
-  /**
-   *
-   * @param startsAt Alert start time
-   * @param endsAt Alert end time. If empty, then configured AM alert timeout applies
-   * @param generatorUrl Callback url for the user
-   * @param annotations Annotations for the event. Actual event payload.
-   * @param labels identifiers for AM to manage similar alerts
-   */
-  case class AMAlert(
-    startsAt: Instant,
-    endsAt: Option[Instant] = None,
-    generatorUrl: URLString,
-    annotations: Map[String, String] = Map.empty,
-    labels: Map[String, String] = Map.empty)
+case class AMException(msg: String) extends Throwable {
+  override def getMessage: String = msg
 }
+
+/**
+ *
+ * @param startsAt Alert start time
+ * @param endsAt Alert end time. If empty, then configured AM alert timeout applies
+ * @param generatorUrl Callback url for the user
+ * @param annotations Annotations for the event. Actual event payload.
+ * @param labels identifiers for AM to manage similar alerts
+ */
+case class AMAlert(
+  startsAt: Instant,
+  endsAt: Option[Instant] = None,
+  generatorUrl: URLString,
+  annotations: Map[String, String] = Map.empty,
+  labels: Map[String, String] = Map.empty)
