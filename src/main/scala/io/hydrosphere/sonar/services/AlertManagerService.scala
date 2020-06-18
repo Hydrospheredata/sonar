@@ -16,7 +16,7 @@ import io.circe.refined._
 import io.circe.syntax._
 import io.hydrosphere.serving.manager.grpc.entities.ModelVersion
 import io.hydrosphere.serving.monitoring.api.ExecutionInformation
-import io.hydrosphere.sonar.{Logging, URLString}
+import io.hydrosphere.sonar.{Logging, URIString, URLString}
 import io.hydrosphere.sonar.terms.Check
 import io.hydrosphere.sonar.utils.FutureOps._
 
@@ -39,7 +39,7 @@ class NoopAlertService[F[_]](implicit F: Applicative[F]) extends AlertService[F]
 }
 
 class PrometheusAMService[F[_]](
-  amUrl: URLString,
+  amUrl: URIString,
   baseUrl: URLString)(
   implicit F: Async[F]) extends AlertService[F] with Logging {
   val alertmanagerClient: Service[Seq[AMAlert], Response] = Http.client
@@ -72,7 +72,7 @@ class PrometheusAMService[F[_]](
     val failedChecks = failedMetricChecks ++ failedProfileChecks
 
     NonEmptyList.fromList(failedChecks) match {
-      case Some(value) => sendFailedChecks(executionInformation, modelVersion, value)
+      case Some(nel) => sendFailedChecks(executionInformation, modelVersion, nel)
       case None => F.unit
     }
   }
@@ -104,19 +104,28 @@ class PrometheusAMService[F[_]](
     fieldName: String,
     check: Check
   ): AMAlert = {
-    val labels = List(
-      Some("modelVersionId" -> modelVersion.id.toString),
-      Some("modelVersionIncrement" -> modelVersion.version.toString),
-      Some("fieldName" -> fieldName),
-      modelVersion.model.map(x => "modelVersionName" -> x.name),
-      check.metricSpecId.map(x => "metricSpecId" -> x)
+    val labels: Map[String, String] = List(
+      exInfo.metadata.toList.flatMap { meta =>
+        List(
+          "modelVersionId" -> meta.modelVersionId.toString,
+          "modelVersionIncrement" -> meta.modelVersion.toString,
+          "modelName" -> meta.modelName,
+          "requestId" -> meta.requestId
+        ) ++ meta.appInfo.toList.flatMap { appInfo =>
+          List(
+            "applicationId" -> appInfo.applicationId.toString,
+            "applicationStageId" -> appInfo.stageId
+          )
+        }
+      },
+      List("fieldName" -> fieldName),
+      check.metricSpecId.toList.map(x => "metricSpecId" -> x)
     ).flatten.toMap
 
-    val annotations = List(
+    val annotations: Map[String, String] = List(
       Some("checkValue" -> check.value.toString),
       Some("checkThreshold" -> check.threshold.toString),
       Some("checkDescription" -> check.description),
-      exInfo.metadata.map(meta => "requestId" -> meta.requestId)
     ).flatten.toMap
 
     AMAlert(
