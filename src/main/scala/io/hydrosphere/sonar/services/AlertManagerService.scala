@@ -137,9 +137,11 @@ class PrometheusAMService[F[_]](
   }
 
   def generatorUrl(modelVersion: ModelVersion): URLString = {
-    refineV[Url](s"$baseUrl/models/${modelVersion.model.map(_.id).getOrElse(1)}/${modelVersion.id}/monitoring/dashboard")
-      .toOption
-      .getOrElse(baseUrl)
+    val maybeDashboardUrl = for {
+      model <- modelVersion.model
+      url <- refineV[Url](s"$baseUrl/models/${model.id}/${modelVersion.id}/monitoring").toOption
+    } yield url
+    maybeDashboardUrl.getOrElse(baseUrl)
   }
 }
 
