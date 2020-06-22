@@ -154,7 +154,7 @@ class PrometheusAMService[F[_]](
   def generatorUrl(modelVersion: ModelVersion): URLString = {
     val maybeDashboardUrl = for {
       model <- modelVersion.model
-      uri <- Try(baseURI.resolve(s"models/${model.id}/${modelVersion.id}/monitoring")).toOption
+      uri <- Try(baseURI.resolve(s"/models/${model.id}/${modelVersion.id}/monitoring")).toOption
       urlString <- refineV[Url](uri.toString).toOption
     } yield urlString
     maybeDashboardUrl.getOrElse(baseUrl)
