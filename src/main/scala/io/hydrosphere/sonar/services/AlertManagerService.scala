@@ -1,5 +1,6 @@
 package io.hydrosphere.sonar.services
 
+import java.net.URI
 import java.time.Instant
 
 import cats.Applicative
@@ -20,6 +21,8 @@ import io.hydrosphere.sonar.{Logging, URLString}
 import io.hydrosphere.sonar.terms.Check
 import io.hydrosphere.sonar.utils.FutureOps._
 
+import scala.util.Try
+
 trait AlertService[F[_]] {
   def sendChecks(
     executionInformation: ExecutionInformation,
@@ -38,18 +41,30 @@ class NoopAlertService[F[_]](implicit F: Applicative[F]) extends AlertService[F]
   ): F[Unit] = F.unit
 }
 
+/**
+ *
+ * @param amUrl address of AlertManager in format "host:port"
+ * @param baseUrl base url of serving cluster ui used to create callback links
+ * @param F effect
+ * @tparam F effect
+ */
 class PrometheusAMService[F[_]](
   amUrl: String,
   baseUrl: URLString)(
   implicit F: Async[F]) extends AlertService[F] with Logging {
+
+  // Why URI? A: java.net.URL uses DNS-lookup in certain methods.
+  // URL to URI conversion must be safe because URL is subset of URI.
+  val baseURI = new URI(baseUrl.toString())
+
   val alertmanagerClient: Service[Seq[AMAlert], Response] = Http.client
-    .withSessionQualifier.noFailFast.newService(amUrl.toString())
+    .withSessionQualifier.noFailFast.newService(amUrl)
     .map[Seq[AMAlert]] { alerts =>
       val content = Buf.Utf8.apply(alerts.asJson.noSpaces)
       val ir = Request(Method.Post, "/api/v2/alerts")
         .content(content)
       ir.contentType = "application/json"
-      ir.host = amUrl.toString()
+      ir.host = amUrl
       ir
     }
 
@@ -139,8 +154,9 @@ class PrometheusAMService[F[_]](
   def generatorUrl(modelVersion: ModelVersion): URLString = {
     val maybeDashboardUrl = for {
       model <- modelVersion.model
-      url <- refineV[Url](s"$baseUrl/models/${model.id}/${modelVersion.id}/monitoring").toOption
-    } yield url
+      uri <- Try(baseURI.resolve(s"models/${model.id}/${modelVersion.id}/monitoring")).toOption
+      urlString <- refineV[Url](uri.toString).toOption
+    } yield urlString
     maybeDashboardUrl.getOrElse(baseUrl)
   }
 }

@@ -1,5 +1,6 @@
 package io.hydrosphere.sonar.services
 
+import java.net.URI
 import java.util.UUID
 
 import cats.effect.IO
