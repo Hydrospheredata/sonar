@@ -27,7 +27,10 @@ import io.hydrosphere.sonar.services._
 import io.hydrosphere.sonar.utils.{AutoODServiceRpc, GatewayServiceRpc}
 import org.mongodb.scala.{MongoClient, MongoClientSettings}
 import org.slf4j.bridge.SLF4JBridgeHandler
+import pureconfig.ConfigSource
+import pureconfig.error.ConfigReaderException
 import pureconfig.generic.auto._
+import eu.timepit.refined.pureconfig._
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
@@ -91,12 +94,12 @@ object Dependencies {
     instance <- Async[F].delay(new MongoCheckStorageService[F](configuration, client))
   } yield instance
 
-//  def alertManagerService(config: Configuration, modelDataService: ModelDataService[IO]): AlertManagerService[IO] = {
-//    config.alerting match {
-//      case Some(value) => AlertManagerService.prometheus[IO](value.alertManagerUrl, value.frontendUrl, modelDataService)
-//      case None => AlertManagerService.noop[IO]()
-//    }
-//  }
+  def alertManagerService(config: Configuration): AlertService[IO] = {
+    config.alerting match {
+      case Some(value) => new PrometheusAMService[IO](value.alertManagerUrl, value.frontendUrl)
+      case None => new NoopAlertService[IO]
+    }
+  }
 
   def batchMetricService[F[_]: Async](configuration: Configuration, mongoClient: MongoClient, modelDataService: ModelDataService[IO], checkStorageService: CheckStorageService[IO]): F[BatchMetricService[F]] =
     Async[F].delay{
@@ -139,7 +142,7 @@ object Main extends IOApp with Logging {
     builder.build.start()
   }
 
-  def loadConfiguration[F[_]: Sync]: F[Configuration] = Sync[F].delay(pureconfig.loadConfigOrThrow[Configuration])
+  def loadConfiguration[F[_]: Sync]: F[Configuration] = Sync[F].fromEither(ConfigSource.default.load[Configuration].leftMap(ConfigReaderException(_)))
 
   def setupLogging[F[_] : Sync]: F[Unit] = Sync[F].delay {
     SLF4JBridgeHandler.removeHandlersForRootLogger()
@@ -169,14 +172,14 @@ object Main extends IOApp with Logging {
     checkSlowService <- Dependencies.getCheckSlowStorageService[IO](config, modelDataService, checkStorageService)
     httpService <- Dependencies.httpService[IO](metricSpecService, profileStorageService, modelDataService, batchProfileService, checkStorageService, checkSlowService)
     predictionService <- Dependencies.predictionService[IO](gatewayRpc)
-    //    amService = Dependencies.alertManagerService(config, modelDataService)
+    amService = Dependencies.alertManagerService(config)
     writerService <- Dependencies.batchMetricService[IO](config, mongoClient, modelDataService, checkStorageService)
     
     _ <- writerService.start
 
-    actorSystem <- createActorSystem[IO](config, metricSpecService, modelDataService, predictionService, profileStorageService/*, amService*/)
+    actorSystem <- createActorSystem[IO](config, metricSpecService, modelDataService, predictionService, profileStorageService)
 
-    grpc <- runGrpcServer[IO](config, new MonitoringServiceGrpcApi(actorSystem, profileStorageService, metricSpecService, predictionService, checkStorageService, modelDataService))
+    grpc <- runGrpcServer[IO](config, new MonitoringServiceGrpcApi(actorSystem, profileStorageService, metricSpecService, predictionService, checkStorageService, modelDataService, amService))
     _ <- IO(logger.info(s"GRPC server started on port ${grpc.getPort}"))
 
     http <- IO(Http.server.withStreaming(true).serve(s"${config.http.host}:${config.http.port}", httpService.api))
