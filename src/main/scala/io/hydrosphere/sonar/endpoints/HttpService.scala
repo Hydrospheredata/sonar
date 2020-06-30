@@ -198,17 +198,23 @@ class HttpService[F[_] : Monad : Effect](
     }.map(Ok)
   }
 
-  def getCheckAggregates = get("monitoring" :: "checks" :: "aggregates" :: path[Long] :: param[Int]("limit") :: param[Int]("offset")) { (modelVersionId: Long, limit: Int, offset: Int) =>
+  def getCheckAggregates = get("monitoring" :: "checks" :: "aggregates" :: path[Long] :: param[Int]("limit") :: param[Int]("offset") :: paramOption[Int]("from") :: paramOption[Int]("till")) { (modelVersionId: Long, limit: Int, offset: Int, from: Option[Int], till: Option[Int]) =>
     val program = for {
-      count <- checkStorageService.getAggregateCount(modelVersionId)
-      jsonStrings <- checkStorageService.getAggregates(modelVersionId, limit, offset)
+      count <- checkStorageService.getAggregateCount(modelVersionId, from, till)
+      dateRange <- checkStorageService.getAggregateDateRange(modelVersionId)
+      jsonStrings <- checkStorageService.getAggregates(modelVersionId, limit, offset, from, till)
       jsons = jsonStrings.map((jsonString: String) =>
         parse(jsonString) match {
           case Left(value) => Json.Null
           case Right(value) => value
         }
       )
-    } yield Json.obj("count" -> Json.fromLong(count), "results" -> Json.arr(jsons: _*))
+    } yield Json.obj(
+      "count" -> Json.fromLong(count), 
+      "minDate" -> dateRange.map(dates => Json.fromInt(dates._1)).getOrElse(Json.Null),
+      "maxDate" -> dateRange.map(dates => Json.fromInt(dates._2)).getOrElse(Json.Null),
+      "results" -> Json.arr(jsons: _*)
+    )
     
     program.map(Ok)
   }

@@ -25,6 +25,7 @@ import org.mongodb.scala.model.UpdateOptions
 import org.mongodb.scala.model.Sorts.{descending, _}
 import org.mongodb.scala.model.Updates._
 import org.mongodb.scala.model.Aggregates._
+import org.mongodb.scala.model.Accumulators
 import org.mongodb.scala.{Document, MongoClient, MongoCollection, MongoDatabase}
 import java.util.Calendar
 import java.util.GregorianCalendar
@@ -38,7 +39,9 @@ object CheckStorageService {
 trait CheckStorageService[F[_]] {
   def saveCheckedRequest(request: ExecutionInformation, modelVersion: ModelVersion, checks: Map[String, Seq[Check]], metricChecks: Map[String, Check]): F[Unit]
   
-  def getAggregateCount(modelVersionId: Long): F[Long]
+  def getAggregateCount(modelVersionId: Long, from: Option[Int], till: Option[Int]): F[Long]
+  
+  def getAggregateDateRange(modelVersionId: Long): F[Option[(Int, Int)]]
   
   def getAggregateById(modelVersionId: Long, aggregationId: String): F[Option[AggregationMetadata]]
   
@@ -52,7 +55,7 @@ trait CheckStorageService[F[_]] {
   // TODO: can we make this better than returning json representation as a String?
   def getChecks(modelVersionId: Long, from: String, to: String): F[Seq[String]]
   def getChecks(modelVersionId: Long, limit: Int, offset: Int): F[Seq[String]]
-  def getAggregates(modelVersionId: Long, limit: Int, offset: Int): F[Seq[String]]
+  def getAggregates(modelVersionId: Long, limit: Int, offset: Int, from: Option[Int], till: Option[Int]): F[Seq[String]]
   
   def getCheckById(id: String): F[Option[String]]
   
@@ -133,11 +136,30 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
       .map(_.headOption)
   }
 
-  override def getAggregateCount(modelVersionId: Long): F[Long] = {
+  override def getAggregateCount(modelVersionId: Long, from: Option[Int], till: Option[Int]): F[Long] = {
+    val idFilter = equal("_hs_model_version_id", modelVersionId)
+    val fromFilter = from.map(ts => gte("_hs_first_id", new ObjectId(new java.util.Date(ts.toLong * 1000))))
+    val tillFilter = till.map(ts => lte("_hs_last_id", new ObjectId(new java.util.Date(ts.toLong * 1000), 0xFFFFFF, Short.MaxValue, 0xFFFFFF)))
+    val filters = Seq(Some(idFilter), fromFilter, tillFilter).filter(_.isDefined).map(_.get)
+    val productFilter = and(filters: _*)
     aggregatedCheckCollection
-      .countDocuments(equal("_hs_model_version_id", modelVersionId))
+      .countDocuments(productFilter)
       .toFuture()
       .liftToAsync[F]
+  }
+  
+  override def getAggregateDateRange(modelVersionId: Long): F[Option[(Int, Int)]] = {
+    aggregatedCheckCollection
+      .aggregate(List(filter(equal("_hs_model_version_id", modelVersionId)), group("null", Accumulators.min("min_date", "$_hs_first_id"), Accumulators.max("max_date", "$_hs_last_id"))))
+      .toFuture()
+      .liftToAsync[F]
+      .map(docs => {
+        for {
+          doc <- docs.headOption
+          minDate <- Option(doc.getObjectId("min_date")).map(_.getTimestamp)
+          maxDate <- Option(doc.getObjectId("max_date")).map(_.getTimestamp)
+        } yield (minDate, maxDate)
+      })
   }
 
   override def enrichAggregatesWithBatchChecks(aggregationId: String, checks: Map[String, Map[String, Map[String, Int]]]): F[Unit] = {
@@ -194,9 +216,15 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
       ))
   }
 
-  override def getAggregates(modelVersionId: Long, limit: Int, offset: Int): F[Seq[String]] = {
+  override def getAggregates(modelVersionId: Long, limit: Int, offset: Int, from: Option[Int], till: Option[Int]): F[Seq[String]] = {
+    val idFilter = equal("_hs_model_version_id", modelVersionId)
+    val fromFilter = from.map(ts => gte("_hs_first_id", new ObjectId(new java.util.Date(ts.toLong * 1000))))
+    val tillFilter = till.map(ts => lte("_hs_last_id", new ObjectId(new java.util.Date(ts.toLong * 1000), 0xFFFFFF, Short.MaxValue, 0xFFFFFF)))
+    val filters = Seq(Some(idFilter), fromFilter, tillFilter).filter(_.isDefined).map(_.get)
+    val productFilter = and(filters: _*)
     aggregatedCheckCollection
-      .find(equal("_hs_model_version_id", modelVersionId))
+//      .find(equal("_hs_model_version_id", modelVersionId))
+      .find(productFilter)
       .sort(descending("_id"))
       .limit(limit)
       .skip(offset)
