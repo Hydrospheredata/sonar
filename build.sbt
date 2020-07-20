@@ -60,7 +60,7 @@ dockerfile in docker := {
 
 imageNames in docker := Seq(
   ImageName(
-    namespace = Some("docker.hydrosphere.io"),
+    namespace = Some("harbor.hydrosphere.io/hydro-serving"),
     repository = name.value,
     tag = Some(version.value)
   )
