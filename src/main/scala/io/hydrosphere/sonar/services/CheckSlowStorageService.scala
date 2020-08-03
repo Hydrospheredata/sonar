@@ -25,10 +25,6 @@ trait CheckSlowStorageService[F[_]] {
 }
 
 class S3ParquetSlowStorageService[F[_]: Async](config: Configuration, modelDataService: ModelDataService[F], checkStorageService: CheckStorageService[F]) extends CheckSlowStorageService[F] {
-  
-  //TODO: get from config
-  val BATCH_SIZE = 10
-
   override def getCheckSubsample(modelVersionId: Long, size: Int): F[Seq[String]] = for {
     model <- modelDataService.getModelVersion(modelVersionId)
     allFilePaths <- Async[F].delay {
@@ -37,15 +33,16 @@ class S3ParquetSlowStorageService[F[_]: Async](config: Configuration, modelDataS
       iter.asScala.map(_.get.objectName()).toSeq
     }
     (paths, actualRowsPerFile) = {
-      val actualSize = if (size < 1) 1 else if (size > BATCH_SIZE * 10) BATCH_SIZE * 10 else size
+      val batchSize = config.monitoring.batch_size
+      val actualSize = if (size < 1) 1 else if (size > batchSize * 10) batchSize * 10 else size
       if (allFilePaths.isEmpty) {
         (Seq.empty, 0)
       } else {
         val rowsPerFile = actualSize / allFilePaths.size
-        if (rowsPerFile >= BATCH_SIZE) {
-          (allFilePaths, BATCH_SIZE)
-        } else if (rowsPerFile <= BATCH_SIZE / 2) { // TODO: need better number (configurable?)
-          (Random.shuffle(allFilePaths).take(actualSize / (BATCH_SIZE / 2)), BATCH_SIZE / 2)
+        if (rowsPerFile >= batchSize) {
+          (allFilePaths, batchSize)
+        } else if (rowsPerFile <= batchSize / 2) { // TODO: need better number (configurable?)
+          (Random.shuffle(allFilePaths).take(actualSize / (batchSize / 2)), batchSize / 2)
         } else {
           (allFilePaths, rowsPerFile)
         }  

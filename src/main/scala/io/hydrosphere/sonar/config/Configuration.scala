@@ -7,5 +7,6 @@ case class Configuration(
                           sidecar: SidecarConfiguration,
                           profile: ProfileConfiguration,
                           storage: StorageConfiguration,
-                          alerting: Option[AlertingConfiguration]
+                          alerting: Option[AlertingConfiguration],
+                          monitoring: MonitoringConfiguration
 )

@@ -117,7 +117,7 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
   
 
   override def getAggregatesForSubsample(modelVersionId: Long, subsampleSize: Int): F[Seq[AggregationMetadata]] = {
-    val batchSize = 10 // TODO: configure
+    val batchSize = config.monitoring.batch_size
     val count = math.ceil(subsampleSize.toDouble / batchSize.toDouble).toInt
     aggregatedCheckCollection
       .aggregate(List(filter(and(equal("_hs_model_version_id", modelVersionId), equal("_hs_requests", batchSize))), sample(count)))
