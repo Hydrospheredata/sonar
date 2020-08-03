@@ -33,7 +33,7 @@ class S3ParquetSlowStorageService[F[_]: Async](config: Configuration, modelDataS
       iter.asScala.map(_.get.objectName()).toSeq
     }
     (paths, actualRowsPerFile) = {
-      val batchSize = config.monitoring.batch_size
+      val batchSize = config.monitoring.batchSize
       val actualSize = if (size < 1) 1 else if (size > batchSize * 10) batchSize * 10 else size
       if (allFilePaths.isEmpty) {
         (Seq.empty, 0)
