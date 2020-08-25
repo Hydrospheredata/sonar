@@ -120,10 +120,6 @@ class TrainingProfileServiceInterpreter(config: Configuration, state: Ref[IO, Ma
     val fullS3Path = s"s3://${config.storage.bucket}/$objectKey"
     val document = TrainingDataDocument(fullS3Path, modelVersion)
     val s3CopyProgram = IO {
-      val exists = minio.bucketExists(config.storage.bucket)
-      if (!exists && config.storage.createBucket) {
-        minio.makeBucket(config.storage.bucket)
-      }
       minio.putObject(config.storage.bucket, objectKey, path)
     }
     fs2.Stream.eval(s3CopyProgram) >>
