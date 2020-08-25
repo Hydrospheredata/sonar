@@ -23,7 +23,7 @@ trait CheckSlowStorageService[F[_]] {
   
   def getCheckSubsample(modelVersionId: Long, size: Int): F[Seq[String]]
 
-  def createBucketIfNotExists(): Unit
+  def createBucketIfNotExists(): IO[Unit]
 }
 
 class S3ParquetSlowStorageService[F[_]: Async](config: Configuration, modelDataService: ModelDataService[F], checkStorageService: CheckStorageService[F]) extends CheckSlowStorageService[F] {
@@ -31,11 +31,13 @@ class S3ParquetSlowStorageService[F[_]: Async](config: Configuration, modelDataS
   //TODO: get from config
   val BATCH_SIZE = 10
 
-  override def createBucketIfNotExists(): Unit = {
+  override def createBucketIfNotExists(): IO[Unit] = {
     val minio = S3Client.fromConfig(config)
     val exists = minio.bucketExists(config.storage.bucket)
-    if (!exists && config.storage.createBucket)
-      minio.makeBucket(config.storage.bucket)
+    IO {
+      if (!exists && config.storage.createBucket)
+        minio.makeBucket(config.storage.bucket)
+    }
   }
 
   override def getCheckSubsample(modelVersionId: Long, size: Int): F[Seq[String]] = for {
