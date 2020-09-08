@@ -1,7 +1,6 @@
 package io.hydrosphere.sonar.services
 
 import java.util.Calendar
-
 import cats.effect.{Async, IO, LiftIO, Resource}
 import cats.implicits._
 import cats.effect.implicits._
@@ -26,14 +25,16 @@ trait CheckSlowStorageService[F[_]] {
 
 class S3ParquetSlowStorageService[F[_]: Async](config: Configuration, modelDataService: ModelDataService[F], checkStorageService: CheckStorageService[F]) extends CheckSlowStorageService[F] {
   override def getCheckSubsample(modelVersionId: Long, size: Int): F[Seq[String]] = for {
-    model <- modelDataService.getModelVersion(modelVersionId)
-    allFilePaths <- Async[F].delay {
+      model <- modelDataService.getModelVersion(modelVersionId)
+      batchSize = model.monitoringConfiguration.map(_.batchSize).getOrElse(config.monitoring.batchSize)
+
+      allFilePaths <- Async[F].delay {
       val minio = S3Client.fromConfig(config)
       val iter = minio.listObjects(config.storage.bucket, s"${model.model.map(_.name).getOrElse("_unknown")}/${model.version}")
       iter.asScala.map(_.get.objectName()).toSeq
     }
     (paths, actualRowsPerFile) = {
-      val batchSize = config.monitoring.batchSize
+
       val actualSize = if (size < 1) 1 else if (size > batchSize * 10) batchSize * 10 else size
       if (allFilePaths.isEmpty) {
         (Seq.empty, 0)

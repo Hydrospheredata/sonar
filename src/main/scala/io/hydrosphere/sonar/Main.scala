@@ -89,9 +89,9 @@ object Dependencies {
     } yield instance
   }
 
-  def checkStorageService[F[_]: Async](configuration: Configuration, client: MongoClient): F[CheckStorageService[F]] = for {
+  def checkStorageService[F[_]: Async](configuration: Configuration, client: MongoClient, modelDataService: ModelDataService[F]): F[CheckStorageService[F]] = for {
     //    state <- Ref.of[F, Seq[CheckStorageService.CheckedRequest]](Seq.empty)
-    instance <- Async[F].delay(new MongoCheckStorageService[F](configuration, client))
+    instance <- Async[F].delay(new MongoCheckStorageService[F](configuration, client, modelDataService))
   } yield instance
 
   def alertManagerService(config: Configuration): AlertService[IO] = {
@@ -168,7 +168,7 @@ object Main extends IOApp with Logging {
     profileStorageService <- Dependencies.profileStorageService[IO](config, mongoClient)
     modelDataService <- Dependencies.modelDataService[IO](config)
     batchProfileService <- Dependencies.batchProfileService(config, profileStorageService, mongoClient, autoOdService)
-    checkStorageService <- Dependencies.checkStorageService[IO](config, mongoClient)
+    checkStorageService <- Dependencies.checkStorageService[IO](config, mongoClient, modelDataService)
     checkSlowService <- Dependencies.getCheckSlowStorageService[IO](config, modelDataService, checkStorageService)
     httpService <- Dependencies.httpService[IO](metricSpecService, profileStorageService, modelDataService, batchProfileService, checkStorageService, checkSlowService)
     predictionService <- Dependencies.predictionService[IO](gatewayRpc)
