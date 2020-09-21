@@ -71,3 +71,5 @@ buildInfoPackage := "io.hydrosphere.sonar"
 buildInfoOptions += BuildInfoOption.ToJson
 buildInfoRenderFactory := ScalaCaseClassRenderer.apply
 unmanagedSourceDirectories in Compile += sourceManaged.value
+
+excludeDependencies += "org.slf4j" % "slf4j-log4j12"
