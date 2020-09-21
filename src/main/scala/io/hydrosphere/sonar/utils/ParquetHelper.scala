@@ -87,7 +87,9 @@ object ParquetHelper {
         case DataProfileType.NUMERICAL =>
           rawChecksBuilder = rawChecksBuilder
             .name(modelField.name).`type`().array().items().`type`("RawCheck").noDefault()
-        case DataProfileType.NONE => // do nothing
+        case DataProfileType.NONE =>
+          rawChecksBuilder = rawChecksBuilder
+            .name(modelField.name).`type`().array().items().`type`("RawCheck").noDefault()
         case DataProfileType.CATEGORICAL => // do nothing
         case DataProfileType.NOMINAL => // do nothing
         case DataProfileType.ORDINAL => // do nothing
