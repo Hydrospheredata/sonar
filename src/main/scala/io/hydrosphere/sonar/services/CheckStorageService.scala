@@ -224,8 +224,8 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
 
   override def getAggregates(modelVersionId: Long, limit: Int, offset: Int, from: Option[Int], till: Option[Int]): F[Seq[String]] = {
     val idFilter = equal("_hs_model_version_id", modelVersionId)
-    val fromFilter = from.map(ts => gte("_hs_first_id", new ObjectId(new java.util.Date(ts.toLong * 1000))))
-    val tillFilter = till.map(ts => lte("_hs_last_id", new ObjectId(new java.util.Date(ts.toLong * 1000), 0xFFFFFF, Short.MaxValue, 0xFFFFFF)))
+    val fromFilter = from.map(ts => gte("_hs_last_id", new ObjectId(new java.util.Date(ts.toLong * 1000))))
+    val tillFilter = till.map(ts => lte("_hs_first_id", new ObjectId(new java.util.Date(ts.toLong * 1000), 0xFFFFFF, Short.MaxValue, 0xFFFFFF)))
     val filters = Seq(Some(idFilter), fromFilter, tillFilter).flatten
     val productFilter = and(filters: _*)
     aggregatedCheckCollection
