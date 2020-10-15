@@ -10,14 +10,14 @@ object Dependencies {
     "org.slf4j" % "jul-to-slf4j" % "1.7.25"
   )
 
-  val CirceV = "0.11.1"
+  val CirceV = "0.13.0"
   val circe: Seq[ModuleID] = Seq(
     "io.circe" %% "circe-generic" % CirceV,
     "io.circe" %% "circe-parser" % CirceV,
     "io.circe" %% "circe-generic-extras" % CirceV
   )
 
-  val FinchV = "0.31.0"
+  val FinchV = "0.32.1"
   val finch: Seq[ModuleID] = Seq(
     "com.github.finagle" %% "finchx-core" % FinchV,
     "com.github.finagle" %% "finchx-circe" % FinchV,
@@ -26,16 +26,18 @@ object Dependencies {
   )
 
   val grpc: Seq[ModuleID] = Seq(
-    "io.grpc" % "grpc-netty" % "1.18.0",
-    "io.hydrosphere" %% "serving-grpc-scala" % "2.3.0"
+    "io.grpc" % "grpc-netty" % "1.32.1",
+//    "io.hydrosphere" %% "serving-grpc-scala" % "2.4.0-rc2"
+    "io.hydrosphere" %% "serving-grpc-scala" % "3.0.0-dev2"
   )
 
-  val PureConfigV = "0.12.1"
+  val PureConfigV = "0.14.0"
   val pureconfig: Seq[ModuleID] = Seq(
-    "com.github.pureconfig" %% "pureconfig" % PureConfigV
+    "com.github.pureconfig" %% "pureconfig" % PureConfigV,
+    "com.github.pureconfig" %% "pureconfig-generic" % PureConfigV
   )
 
-  val AkkaV = "2.5.27"
+  val AkkaV = "2.6.9"
   val akka: Seq[ModuleID] = Seq(
     "com.typesafe.akka" %% "akka-actor-typed" % AkkaV,
     "com.typesafe.akka" %% "akka-slf4j" % AkkaV,
@@ -49,10 +51,11 @@ object Dependencies {
   )
   
   // TODO: update to 2.0
+  val Fs2V = "2.4.4"
   val fs2: Seq[ModuleID] = Seq(
-    "co.fs2" %% "fs2-core" % "1.0.5",
-    "co.fs2" %% "fs2-io" % "1.0.5",
-    "io.github.dmateusp" %% "fs2-aws" % "0.27.3" exclude("com.amazonaws", "aws-java-sdk-bundle")
+    "co.fs2" %% "fs2-core" % Fs2V,
+    "co.fs2" %% "fs2-io" % Fs2V
+//    "io.github.dmateusp" %% "fs2-aws" % "0.27.3" exclude("com.amazonaws", "aws-java-sdk-bundle")
   )
 
   val TestV = "3.0.8"
@@ -75,7 +78,7 @@ object Dependencies {
     "org.apache.parquet" % "parquet-avro" % ParquetV
   )
 
-  val RefinedV = "0.9.14"
+  val RefinedV = "0.9.16"
   val refined: Seq[ModuleID]  = Seq (
     "eu.timepit" %% "refined"                 % RefinedV,
     "eu.timepit" %% "refined-cats"            % RefinedV,
@@ -87,11 +90,11 @@ object Dependencies {
     test ++ logback ++ circe ++ finch ++ grpc ++ pureconfig ++ akka ++ cats ++ fs2 ++ hadoop ++ parquet ++ refined ++
     Seq(
       "net.openhft" % "zero-allocation-hashing" % "0.8",
-      "org.scalanlp" %% "breeze" % "0.13.2",
+      "org.scalanlp" %% "breeze" % "1.1",
       "com.beachape" %% "enumeratum" % "1.5.13",
-      "org.mongodb.scala" %% "mongo-scala-driver" % "2.5.0",
+      "org.mongodb.scala" %% "mongo-scala-driver" % "4.1.0",
       "com.amazonaws" % "aws-java-sdk-bundle" % "1.11.456",
-      "edu.stanford.nlp" % "stanford-corenlp" % "3.9.2",
+//      "edu.stanford.nlp" % "stanford-corenlp" % "3.9.2",
       "tech.allegro.schema.json2avro" % "converter" % "0.2.9",
       "io.minio" % "minio" % "6.0.11"
     )
