@@ -14,7 +14,6 @@ import org.bson.codecs.configuration.CodecRegistries.{fromCodecs, fromRegistries
 import org.bson.codecs.configuration.CodecRegistry
 import org.bson.codecs.{Codec, DecoderContext, EncoderContext}
 import org.bson.{BsonReader, BsonWriter}
-import org.mongodb.scala.bson.codecs.DEFAULT_CODEC_REGISTRY
 import org.mongodb.scala.bson.{BsonObjectId, Decimal128}
 import org.mongodb.scala.model.Filters._
 import org.mongodb.scala.model.UpdateOptions
@@ -75,8 +74,7 @@ import io.hydrosphere.sonar.services.ProfileStorageServiceMongoInterpreter._
 class ProfileStorageServiceMongoInterpreter[F[_]: Async](config: Configuration, state: Ref[F, ObjectIdState], mongoClient: MongoClient) extends ProfileStorageService[F] with Logging {
   
   val codecRegistry: CodecRegistry = fromRegistries(
-    fromCodecs(new BigDecimalScalaCodec),
-    DEFAULT_CODEC_REGISTRY
+    fromCodecs(new BigDecimalScalaCodec)
   )
   
   lazy val database: MongoDatabase = mongoClient.getDatabase(config.mongo.database)
@@ -187,7 +185,7 @@ class ProfileStorageServiceMongoInterpreter[F[_]: Async](config: Configuration, 
           } yield HyperLogLog(size, buckets))
           countMinSketch <- doc.get("countMinSketch").map(d => Document(d.asDocument().toJson)).flatMap(cms => for {
             size <- cms.get("size").map(_.asInt32().intValue())
-            buckets <- cms.get("buckets").map(_.asDocument().entrySet().asScala.map(e => e.getKey.toInt -> e.getValue.asInt64().longValue()).toMap)
+            buckets <- cms.get("buckets").map(_.asDocument().entrySet().asScala.map(e => e.getKey.toInt -> e.getValue.asInt32().longValue()).toMap)
           } yield CountMinSketch(size, buckets))
         } yield NumericalProfile(NumericalPreprocessedProfile(modelVersionId, name, sum, size, squaresSum, fourthPowersSum, missing, min, max, histogramBins, hyperLogLog, countMinSketch))
         case "text" => for {

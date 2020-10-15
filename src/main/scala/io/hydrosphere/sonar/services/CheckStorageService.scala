@@ -1,7 +1,7 @@
 package io.hydrosphere.sonar.services
 
 import cats.effect.concurrent.Ref
-import cats.effect.{Async, Sync}
+import cats.effect.Async
 import cats.implicits._
 import com.google.protobuf.ByteString
 import io.hydrosphere.serving.manager.grpc.entities.ModelVersion
@@ -20,16 +20,22 @@ import io.hydrosphere.sonar.utils.TensorProtoOps._
 import io.hydrosphere.sonar.utils.mongo.ObservableExt._
 import org.bson.json.{JsonWriterSettings, StrictJsonWriter}
 import org.bson.types.ObjectId
-import org.mongodb.scala.bson.{BsonArray, BsonBoolean, BsonDateTime, BsonDocument, BsonNull, BsonNumber, BsonObjectId, BsonString, BsonValue}
+import org.mongodb.scala.bson.{BsonArray, BsonBoolean, BsonDateTime, BsonDocument, BsonNull, BsonNumber, BsonObjectId, BsonString, BsonValue, conversions}
 import org.mongodb.scala.model.Filters.{lt, _}
 import org.mongodb.scala.model.UpdateOptions
 import org.mongodb.scala.model.Sorts.{descending, _}
 import org.mongodb.scala.model.Updates._
 import org.mongodb.scala.model.Aggregates._
 import org.mongodb.scala.model.Accumulators
-import org.mongodb.scala.{Document, MongoClient, MongoCollection, MongoDatabase}
+import org.mongodb.scala.{ClientSession, Document, MongoClient, MongoCollection, MongoDatabase, Observable, Observer, ReadPreference, SingleObservable, TransactionOptions}
 import java.util.Calendar
 import java.util.GregorianCalendar
+
+import com.mongodb.{ReadConcern, WriteConcern}
+import org.mongodb.scala.result.InsertOneResult
+
+import scala.concurrent.Await
+import scala.concurrent.duration.{Duration, FiniteDuration}
 
 
 object CheckStorageService {
@@ -73,13 +79,17 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
   lazy val aggregatedCheckCollection: MongoCollection[Document] =
     database.getCollection("aggregated_check")
 
+  def createCheckCollection: F[Unit] =
+    database.createCollection("checks").toFuture().liftToAsync.map(_ => Unit)
+
+  def createAggregatedCheckCollection: F[Unit] =
+    database.createCollection("aggregated_check").toFuture().liftToAsync.map(_ => Unit)
+
   private def getScore(checks: Iterable[Check]): BsonValue = {
     val checkValues = checks.map(_.check.toInt)
     val score = checkValues.sum.toDouble / checkValues.size
     if (score.isNaN) BsonNull() else BsonNumber(score)
-
   }
-
 
   override def getChecksForComparision(originalModelVersion: Long, aggregationId: String, comparedModelVersionId: Long): F[Seq[String]] = for {
     mayBeAggregate <- getAggregateById(originalModelVersion, aggregationId)
@@ -145,7 +155,7 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
   override def getAggregateCount(modelVersionId: Long, from: Option[Int], till: Option[Int]): F[Long] = {
     val idFilter = equal("_hs_model_version_id", modelVersionId)
     val fromFilter = from.map(ts => gte("_hs_first_id", new ObjectId(new java.util.Date(ts.toLong * 1000))))
-    val tillFilter = till.map(ts => lte("_hs_last_id", new ObjectId(new java.util.Date(ts.toLong * 1000), 0xFFFFFF, Short.MaxValue, 0xFFFFFF)))
+    val tillFilter = till.map(ts => lte("_hs_last_id", new ObjectId(new java.util.Date(ts.toLong * 1000))))
     val filters = Seq(Some(idFilter), fromFilter, tillFilter).flatten
     val productFilter = and(filters: _*)
     aggregatedCheckCollection
@@ -225,7 +235,7 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
   override def getAggregates(modelVersionId: Long, limit: Int, offset: Int, from: Option[Int], till: Option[Int]): F[Seq[String]] = {
     val idFilter = equal("_hs_model_version_id", modelVersionId)
     val fromFilter = from.map(ts => gte("_hs_last_id", new ObjectId(new java.util.Date(ts.toLong * 1000))))
-    val tillFilter = till.map(ts => lte("_hs_first_id", new ObjectId(new java.util.Date(ts.toLong * 1000), 0xFFFFFF, Short.MaxValue, 0xFFFFFF)))
+    val tillFilter = till.map(ts => lte("_hs_first_id", new ObjectId(new java.util.Date(ts.toLong * 1000))))
     val filters = Seq(Some(idFilter), fromFilter, tillFilter).flatten
     val productFilter = and(filters: _*)
     aggregatedCheckCollection
@@ -247,7 +257,6 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
   // TODO: refactor (may be create more typed data structures for enrcihed data and for aggregations)
   override def saveCheckedRequest(ei: ExecutionInformation, modelVersion: ModelVersion, checks: Map[String, Seq[Check]], metricChecks: Map[String, Check]): F[Unit] = {
     logger.info(s"${modelVersion.id} saveCheckedRequest with ${checks.size} checks and ${metricChecks.size} metrics")
-    println(metricChecks)
     case class ByFieldChecks(checks: Seq[(String, BsonValue)], aggregates: Seq[(String, BsonValue)])
 
     def tensorDataToBson(tensorProto: TensorProto): BsonValue = {
@@ -385,20 +394,36 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
       ("_hs_month" -> BsonNumber(calendar.get(Calendar.MONTH) + 1)) :+
       ("_hs_day" -> BsonNumber(calendar.get(Calendar.DAY_OF_MONTH))) :+
       ("_id" -> objectId)
-    val insertDocument = Document(bsonChecks)
+
+    val checksQuery: Document = Document(bsonChecks)
 
     val increments = maybeBsonChecks.map(_.aggregates).getOrElse(Seq.empty) ++ metricChecks.flatMap(check => Seq(s"_hs_metrics.${check._2.description}.checked" -> BsonNumber(1), s"_hs_metrics.${check._2.description}.passed" -> BsonNumber(check._2.check.toInt))) :+ ("_hs_requests" -> BsonNumber(1))
-    val aggregateQuery = Document(
+    val aggregatesQuery = Document(
       "$inc" -> increments,
       "$set" -> Document("_hs_last_id" -> objectId),
       "$setOnInsert" -> Document("_hs_first_id" -> objectId, "_hs_model_version_id" -> BsonNumber(modelVersion.id), "_hs_model_name" -> BsonString(modelVersion.model.map(_.name).getOrElse("_unknown")))
     )
+    val aggregatesFilter: conversions.Bson = and(equal("_hs_model_version_id", modelVersion.id), lt("_hs_requests", modelVersion.monitoringConfiguration.map(_.batchSize).getOrElse(config.monitoring.batchSize)))
 
-    checkCollection.insertOne(insertDocument).toFuture().liftToAsync *>
+    mongoClient.startSession().map(clientSession => {
+      val transactionOptions = TransactionOptions
+        .builder()
+        .readPreference(ReadPreference.primary())
+        .readConcern(ReadConcern.SNAPSHOT)
+        .writeConcern(WriteConcern.W1)
+        .build()
+      clientSession.startTransaction(transactionOptions)
+      checkCollection.insertOne(
+        clientSession,
+        checksQuery
+      ).subscribe(c => logger.info(s"Inserted checks: $c"))
       aggregatedCheckCollection.updateOne(
-        filter = and(equal("_hs_model_version_id", modelVersion.id), lt("_hs_requests", modelVersion.monitoringConfiguration.map(_.batchSize).getOrElse(config.monitoring.batchSize))),
-        update = aggregateQuery,
-        options = (new UpdateOptions).upsert(true)
-      ).toFuture().liftToAsync.map(_ => Unit)
+        clientSession,
+        aggregatesFilter,
+        aggregatesQuery,
+        (new UpdateOptions).upsert(true)
+      ).subscribe(a => logger.info(s"Updated aggregates: $a"))
+      clientSession.commitTransaction()
+    }).toFuture().liftToAsync.map(_ => Unit)
   }
 }

@@ -1,6 +1,6 @@
 package io.hydrosphere.sonar
 
-import java.util.concurrent.Executors
+import java.util.concurrent.{Executors, TimeUnit}
 
 import akka.actor.Scheduler
 import akka.actor.typed.ActorSystem
@@ -42,7 +42,7 @@ object Dependencies {
       val builder = MongoClientSettings
         .builder()
         .applyToClusterSettings(b => b.applyConnectionString(new ConnectionString(s"mongodb://${config.mongo.host}:${config.mongo.port}/${config.mongo.database}?authSource=admin")))
-        .applyToConnectionPoolSettings(b => b.maxWaitQueueSize(1000).maxSize(200))
+        .applyToConnectionPoolSettings(b => b.maxSize(200).maxWaitTime(100, TimeUnit.SECONDS))
       val credentials: Option[MongoCredential] = for {
         user <- config.mongo.user
         pass <- config.mongo.pass
@@ -92,6 +92,8 @@ object Dependencies {
   def checkStorageService[F[_]: Async](configuration: Configuration, client: MongoClient, modelDataService: ModelDataService[F]): F[CheckStorageService[F]] = for {
     //    state <- Ref.of[F, Seq[CheckStorageService.CheckedRequest]](Seq.empty)
     instance <- Async[F].delay(new MongoCheckStorageService[F](configuration, client, modelDataService))
+//    _ <- instance.createCheckCollection
+//    _ <- instance.createAggregatedCheckCollection
   } yield instance
 
   def alertManagerService(config: Configuration): AlertService[IO] = {
