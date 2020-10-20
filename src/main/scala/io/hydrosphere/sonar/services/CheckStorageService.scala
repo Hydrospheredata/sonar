@@ -22,17 +22,16 @@ import org.bson.json.{JsonWriterSettings, StrictJsonWriter}
 import org.bson.types.ObjectId
 import org.mongodb.scala.bson.{BsonArray, BsonBoolean, BsonDateTime, BsonDocument, BsonNull, BsonNumber, BsonObjectId, BsonString, BsonValue, conversions}
 import org.mongodb.scala.model.Filters.{lt, _}
-import org.mongodb.scala.model.UpdateOptions
+import org.mongodb.scala.model.{Accumulators, FindOneAndUpdateOptions, UpdateOptions}
 import org.mongodb.scala.model.Sorts.{descending, _}
 import org.mongodb.scala.model.Updates._
 import org.mongodb.scala.model.Aggregates._
-import org.mongodb.scala.model.Accumulators
-import org.mongodb.scala.{ClientSession, Document, MongoClient, MongoCollection, MongoDatabase, Observable, Observer, ReadPreference, SingleObservable, TransactionOptions}
+import org.mongodb.scala.{ClientSession, Completed, Document, MongoClient, MongoCollection, MongoDatabase, Observable, Observer, ReadPreference, SingleObservable, TransactionOptions}
 import java.util.Calendar
 import java.util.GregorianCalendar
 
-import com.mongodb.{ReadConcern, WriteConcern}
-import org.mongodb.scala.result.InsertOneResult
+import com.mongodb.{MongoException, ReadConcern, WriteConcern}
+import org.mongodb.scala.result.UpdateResult
 
 import scala.concurrent.Await
 import scala.concurrent.duration.{Duration, FiniteDuration}
@@ -73,6 +72,7 @@ trait CheckStorageService[F[_]] {
 class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: MongoClient, modelDataService: ModelDataService[F]) extends CheckStorageService[F] with Logging {
 
   lazy val database: MongoDatabase = mongoClient.getDatabase(config.mongo.database)
+  val session: SingleObservable[ClientSession] = mongoClient.startSession()
 
   lazy val checkCollection: MongoCollection[Document] =
     database.getCollection("checks")
@@ -109,7 +109,7 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
 
   private def aggregateDocumentToAggregationMetadata(doc: Document): AggregationMetadata = AggregationMetadata(
     id = doc.getObjectId("_id").toHexString,
-    modelVersionId = doc.getLong("_hs_model_version_id"),
+    modelVersionId = doc.getInteger("_hs_model_version_id").toLong,
     firstCheckId = doc.getObjectId("_hs_first_id").toHexString,
     lastCheckId = doc.getObjectId("_hs_last_id").toHexString,
     modelName = doc.getString("_hs_model_name"),
@@ -405,25 +405,71 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
     )
     val aggregatesFilter: conversions.Bson = and(equal("_hs_model_version_id", modelVersion.id), lt("_hs_requests", modelVersion.monitoringConfiguration.map(_.batchSize).getOrElse(config.monitoring.batchSize)))
 
-    mongoClient.startSession().map(clientSession => {
+    updateChecksAndAggregatesWithRetry(checksQuery, aggregatesQuery, aggregatesFilter).toFuture().liftToAsync.map(_ => Unit)
+  }
+
+  private def updateChecksAndAggregatesWithRetry(checksQuery: Document, aggregatesQuery: Document, aggregatesFilter: conversions.Bson): SingleObservable[Completed] = {
+    val checksAndAggregatesObservable: Observable[ClientSession] = updateChecksAndAggregates(checksQuery, aggregatesQuery, aggregatesFilter)
+    val commitTransactionObservable: SingleObservable[Completed] =
+      checksAndAggregatesObservable.flatMap(clientSession => {
+        logger.info("Committing transaction")
+        clientSession.commitTransaction()
+      })
+    val commitAndRetryObservable: SingleObservable[Completed] = commitAndRetry(commitTransactionObservable)
+    runTransactionAndRetry(commitAndRetryObservable)
+  }
+
+  private def updateChecksAndAggregates(checksQuery: Document, aggregatesQuery: Document, aggregatesFilter: conversions.Bson): SingleObservable[ClientSession] = {
+    session.map(clientSession => {
       val transactionOptions = TransactionOptions
         .builder()
         .readPreference(ReadPreference.primary())
         .readConcern(ReadConcern.SNAPSHOT)
-        .writeConcern(WriteConcern.W1)
+        .writeConcern(WriteConcern.MAJORITY)
         .build()
       clientSession.startTransaction(transactionOptions)
       checkCollection.insertOne(
         clientSession,
         checksQuery
-      ).subscribe(c => logger.info(s"Inserted checks: $c"))
-      aggregatedCheckCollection.updateOne(
+      ).subscribe(new Observer[Completed] {
+        override def onNext(result: Completed): Unit = Unit
+
+        override def onError(e: Throwable): Unit = logger.error(e.toString)
+
+        override def onComplete(): Unit = logger.info("Insert")
+      })
+      aggregatedCheckCollection.findOneAndUpdate(
         clientSession,
         aggregatesFilter,
         aggregatesQuery,
-        (new UpdateOptions).upsert(true)
-      ).subscribe(a => logger.info(s"Updated aggregates: $a"))
-      clientSession.commitTransaction()
-    }).toFuture().liftToAsync.map(_ => Unit)
+        (new FindOneAndUpdateOptions).upsert(true)
+      ).subscribe(new Observer[Document] {
+        override def onNext(result: Document): Unit = Unit
+
+        override def onError(e: Throwable): Unit = logger.error(e.toString)
+
+        override def onComplete(): Unit = logger.info("Update")
+      })
+      clientSession
+    })
+  }
+
+  private def commitAndRetry(observable: SingleObservable[Completed]): SingleObservable[Completed] = {
+    observable.recoverWith {
+      case e: MongoException if e.hasErrorLabel(MongoException.UNKNOWN_TRANSACTION_COMMIT_RESULT_LABEL) =>
+        logger.warn("UnknownTransactionCommitResult, retrying commit operation ...")
+        commitAndRetry(observable)
+      case e: Exception =>
+        logger.error(s"Exception during commit ...: $e")
+        observable
+    }
+  }
+
+  private def runTransactionAndRetry(observable: SingleObservable[Completed]): SingleObservable[Completed] = {
+    observable.recoverWith{
+      case e: MongoException if e.hasErrorLabel(MongoException.TRANSIENT_TRANSACTION_ERROR_LABEL) =>
+        logger.warn("TransientTransactionError, aborting transaction and retrying ...")
+        runTransactionAndRetry(observable)
+    }
   }
 }

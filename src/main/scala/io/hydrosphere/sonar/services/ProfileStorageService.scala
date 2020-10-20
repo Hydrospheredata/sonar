@@ -185,7 +185,7 @@ class ProfileStorageServiceMongoInterpreter[F[_]: Async](config: Configuration, 
           } yield HyperLogLog(size, buckets))
           countMinSketch <- doc.get("countMinSketch").map(d => Document(d.asDocument().toJson)).flatMap(cms => for {
             size <- cms.get("size").map(_.asInt32().intValue())
-            buckets <- cms.get("buckets").map(_.asDocument().entrySet().asScala.map(e => e.getKey.toInt -> e.getValue.asInt32().longValue()).toMap)
+            buckets <- cms.get("buckets").map(_.asDocument().entrySet().asScala.map(e => e.getKey.toInt -> e.getValue.asInt64().longValue()).toMap)
           } yield CountMinSketch(size, buckets))
         } yield NumericalProfile(NumericalPreprocessedProfile(modelVersionId, name, sum, size, squaresSum, fourthPowersSum, missing, min, max, histogramBins, hyperLogLog, countMinSketch))
         case "text" => for {

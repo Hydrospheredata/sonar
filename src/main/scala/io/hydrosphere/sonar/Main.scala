@@ -110,7 +110,9 @@ object Dependencies {
   
   def getCheckSlowStorageService[F[_]: Async](configuration: Configuration, modelDataService: ModelDataService[F], checkStorageService: CheckStorageService[F]): F[CheckSlowStorageService[F]] =
     Async[F].delay {
-      new S3ParquetSlowStorageService[F](configuration, modelDataService, checkStorageService)
+      val slowStorageService = new S3ParquetSlowStorageService[F](configuration, modelDataService, checkStorageService)
+      slowStorageService.createBucketIfNotExists()
+      slowStorageService
     }
   
   def autoODService[F[_]: Async](client: AutoODServiceRpc[F]): F[AutoODService[F]] = Async[F].delay(new GRPCAutoODService[F](client))

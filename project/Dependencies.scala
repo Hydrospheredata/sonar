@@ -89,7 +89,7 @@ object Dependencies {
       "net.openhft" % "zero-allocation-hashing" % "0.8",
       "org.scalanlp" %% "breeze" % "0.13.2",
       "com.beachape" %% "enumeratum" % "1.5.13",
-      "org.mongodb.scala" %% "mongo-scala-driver" % "4.1.0",
+      "org.mongodb.scala" %% "mongo-scala-driver" % "2.9.0",
       "com.amazonaws" % "aws-java-sdk-bundle" % "1.11.456",
       "edu.stanford.nlp" % "stanford-corenlp" % "3.9.2",
       "tech.allegro.schema.json2avro" % "converter" % "0.2.9",
