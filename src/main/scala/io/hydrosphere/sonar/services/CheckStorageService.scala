@@ -35,6 +35,7 @@ import org.mongodb.scala.result.UpdateResult
 
 import scala.concurrent.Await
 import scala.concurrent.duration.{Duration, FiniteDuration}
+import scala.collection.JavaConverters._
 
 
 object CheckStorageService {
@@ -72,19 +73,12 @@ trait CheckStorageService[F[_]] {
 class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: MongoClient, modelDataService: ModelDataService[F]) extends CheckStorageService[F] with Logging {
 
   lazy val database: MongoDatabase = mongoClient.getDatabase(config.mongo.database)
-  val session: SingleObservable[ClientSession] = mongoClient.startSession()
 
   lazy val checkCollection: MongoCollection[Document] =
     database.getCollection("checks")
   lazy val aggregatedCheckCollection: MongoCollection[Document] =
     database.getCollection("aggregated_check")
-
-  def createCheckCollection: F[Unit] =
-    database.createCollection("checks").toFuture().liftToAsync.map(_ => Unit)
-
-  def createAggregatedCheckCollection: F[Unit] =
-    database.createCollection("aggregated_check").toFuture().liftToAsync.map(_ => Unit)
-
+  
   private def getScore(checks: Iterable[Check]): BsonValue = {
     val checkValues = checks.map(_.check.toInt)
     val score = checkValues.sum.toDouble / checkValues.size
@@ -187,16 +181,23 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
   }
 
   override def getChecks(modelVersionId: Long, from: String, to: String): F[Seq[String]] = {
-    checkCollection
-      .find(and(and(gte("_id", BsonObjectId(from)), lte("_id", BsonObjectId(to))), equal("_hs_model_version_id", modelVersionId)))
+    aggregatedCheckCollection
+      .find(and(equal("_hs_first_id", new ObjectId(from)), equal("_hs_last_id", new ObjectId(to))))
       .toFuture()
       .liftToAsync[F]
-      .map(_.map(_.toJson(
-        settings = JsonWriterSettings
-          .builder()
-          .objectIdConverter((value: ObjectId, writer: StrictJsonWriter) => writer.writeString(value.toHexString))
-          .build()
-      )))
+      .flatMap((docs: Seq[Document]) => {
+        val ids = docs.flatMap(doc => doc.get[BsonArray]("_hs_request_ids").map(arr => arr.getValues.asScala.map(_.asObjectId())).getOrElse(List.empty))
+        checkCollection
+          .find(and(in("_id", ids:_*), equal("_hs_model_version_id", modelVersionId)))
+          .toFuture()
+          .liftToAsync[F]
+          .map(_.map(_.toJson(
+            settings = JsonWriterSettings
+              .builder()
+              .objectIdConverter((value: ObjectId, writer: StrictJsonWriter) => writer.writeString(value.toHexString))
+              .build()
+          ))) 
+      })
   }
 
 
@@ -256,7 +257,7 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
 
   // TODO: refactor (may be create more typed data structures for enrcihed data and for aggregations)
   override def saveCheckedRequest(ei: ExecutionInformation, modelVersion: ModelVersion, checks: Map[String, Seq[Check]], metricChecks: Map[String, Check]): F[Unit] = {
-    logger.info(s"${modelVersion.id} saveCheckedRequest with ${checks.size} checks and ${metricChecks.size} metrics")
+//    logger.info(s"${modelVersion.id} saveCheckedRequest with ${checks.size} checks and ${metricChecks.size} metrics")
     case class ByFieldChecks(checks: Seq[(String, BsonValue)], aggregates: Seq[(String, BsonValue)])
 
     def tensorDataToBson(tensorProto: TensorProto): BsonValue = {
@@ -401,76 +402,14 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
     val aggregatesQuery = Document(
       "$inc" -> increments,
       "$set" -> Document("_hs_last_id" -> objectId),
-      "$push" -> Document("_test_requests" -> objectId),
+      "$push" -> Document("_hs_request_ids" -> objectId),
       "$setOnInsert" -> Document("_hs_first_id" -> objectId, "_hs_model_version_id" -> BsonNumber(modelVersion.id), "_hs_model_name" -> BsonString(modelVersion.model.map(_.name).getOrElse("_unknown")))
     )
     val aggregatesFilter: conversions.Bson = and(equal("_hs_model_version_id", modelVersion.id), lt("_hs_requests", modelVersion.monitoringConfiguration.map(_.batchSize).getOrElse(config.monitoring.batchSize)))
-
-    updateChecksAndAggregatesWithRetry(checksQuery, aggregatesQuery, aggregatesFilter).toFuture().liftToAsync.map(_ => Unit)
-  }
-
-  private def updateChecksAndAggregatesWithRetry(checksQuery: Document, aggregatesQuery: Document, aggregatesFilter: conversions.Bson): SingleObservable[Completed] = {
-    val checksAndAggregatesObservable: Observable[ClientSession] = updateChecksAndAggregates(checksQuery, aggregatesQuery, aggregatesFilter)
-    val commitTransactionObservable: SingleObservable[Completed] =
-      checksAndAggregatesObservable.flatMap(clientSession => {
-        logger.info("Committing transaction")
-        clientSession.commitTransaction()
-      })
-    val commitAndRetryObservable: SingleObservable[Completed] = commitAndRetry(commitTransactionObservable)
-    runTransactionAndRetry(commitAndRetryObservable)
-  }
-
-  private def updateChecksAndAggregates(checksQuery: Document, aggregatesQuery: Document, aggregatesFilter: conversions.Bson): SingleObservable[ClientSession] = {
-    session.map(clientSession => {
-      val transactionOptions = TransactionOptions
-        .builder()
-        .readPreference(ReadPreference.primary())
-        .readConcern(ReadConcern.SNAPSHOT)
-        .writeConcern(WriteConcern.MAJORITY)
-        .build()
-      clientSession.startTransaction(transactionOptions)
-      checkCollection.insertOne(
-        clientSession,
-        checksQuery
-      ).subscribe(new Observer[Completed] {
-        override def onNext(result: Completed): Unit = Unit
-
-        override def onError(e: Throwable): Unit = logger.error(e.toString)
-
-        override def onComplete(): Unit = logger.info("Insert")
-      })
-      aggregatedCheckCollection.findOneAndUpdate(
-        clientSession,
-        aggregatesFilter,
-        aggregatesQuery,
-        (new FindOneAndUpdateOptions).upsert(true)
-      ).subscribe(new Observer[Document] {
-        override def onNext(result: Document): Unit = Unit
-
-        override def onError(e: Throwable): Unit = logger.error(e.toString)
-
-        override def onComplete(): Unit = logger.info("Update")
-      })
-      clientSession
-    })
-  }
-
-  private def commitAndRetry(observable: SingleObservable[Completed]): SingleObservable[Completed] = {
-    observable.recoverWith {
-      case e: MongoException if e.hasErrorLabel(MongoException.UNKNOWN_TRANSACTION_COMMIT_RESULT_LABEL) =>
-        logger.warn("UnknownTransactionCommitResult, retrying commit operation ...")
-        commitAndRetry(observable)
-      case e: Exception =>
-        logger.error(s"Exception during commit ...: $e")
-        observable
-    }
-  }
-
-  private def runTransactionAndRetry(observable: SingleObservable[Completed]): SingleObservable[Completed] = {
-    observable.recoverWith{
-      case e: MongoException if e.hasErrorLabel(MongoException.TRANSIENT_TRANSACTION_ERROR_LABEL) =>
-        logger.warn("TransientTransactionError, aborting transaction and retrying ...")
-        runTransactionAndRetry(observable)
-    }
+    
+    val updateAggregatesEffect: F[Unit] = aggregatedCheckCollection.updateOne(aggregatesFilter, aggregatesQuery, (new UpdateOptions).upsert(true)).toFuture().liftToAsync[F].map(r => ())
+    val insertCheckEffect: F[Unit] = checkCollection.insertOne(checksQuery).toFuture().liftToAsync[F].map(_ => ())
+    
+    updateAggregatesEffect *> insertCheckEffect
   }
 }

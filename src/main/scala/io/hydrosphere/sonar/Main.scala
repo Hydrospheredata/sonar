@@ -90,10 +90,7 @@ object Dependencies {
   }
 
   def checkStorageService[F[_]: Async](configuration: Configuration, client: MongoClient, modelDataService: ModelDataService[F]): F[CheckStorageService[F]] = for {
-    //    state <- Ref.of[F, Seq[CheckStorageService.CheckedRequest]](Seq.empty)
     instance <- Async[F].delay(new MongoCheckStorageService[F](configuration, client, modelDataService))
-//    _ <- instance.createCheckCollection
-//    _ <- instance.createAggregatedCheckCollection
   } yield instance
 
   def alertManagerService(config: Configuration): AlertService[IO] = {
