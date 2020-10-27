@@ -14,5 +14,5 @@
 
     <logger name="io.grpc.netty" level="WARN"/>
     <logger name="io.netty" level="WARN"/>
-    <logger name="org.mongodb" level="WARN" />
+    <logger name="org.mongodb" level="INFO" />
 </configuration>

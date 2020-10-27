@@ -167,14 +167,6 @@ class MongoParquetBatchMetricService[F[_]: Async](config: Configuration, mongoCl
       })
 
       schema = ParquetHelper.inferSchema(fields)
-//      _ = println(schema.toString(true))
-      _ <- IO[Unit] {
-        val minio = S3Client.fromConfig(config)
-        val exists = minio.bucketExists(config.storage.bucket)
-        if (!exists && config.storage.createBucket) {
-          minio.makeBucket(config.storage.bucket)
-        }
-      }
       result <- IO {
         val conf = new HadoopConfiguration()
         if (config.storage.accessKey.isDefined)

@@ -59,7 +59,7 @@ class MonitoringServiceGrpcApi(
       }
       effect.unsafeRunAsync {
         case Left(value) => logger.error(s"error while saving checks", value)
-        case Right(value) => logger.info(s"${executionInformation.metadata.get.modelVersionId} checks are done")
+        case Right(value) => //logger.info(s"${executionInformation.metadata.get.modelVersionId} checks are done")
       }
       Empty()
     }

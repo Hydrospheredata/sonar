@@ -9,6 +9,7 @@ import io.hydrosphere.sonar.actors.processors.profiles.{NumericalProfileProcesso
 import io.hydrosphere.sonar.actors.writers.ProfileWriter
 import io.hydrosphere.sonar.config.Configuration
 import io.hydrosphere.sonar.services._
+import io.hydrosphere.sonar.Logging
 import java.util.concurrent.ConcurrentHashMap
 
 import scala.concurrent.duration._
@@ -37,7 +38,7 @@ object SonarSupervisor {
   def apply(implicit config: Configuration, metricSpecService: MetricSpecService[IO], modelDataService: ModelDataService[IO], predictionService: PredictionService[IO], profileStorageService: ProfileStorageService[IO]/*, alertManagerService: AlertManagerService[IO]*/): Behavior[Message] = Behaviors.setup[Message](context => new SonarSupervisor(context))
 }
 
-class SonarSupervisor(context: ActorContext[SonarSupervisor.Message])(implicit config: Configuration, metricSpecService: MetricSpecService[IO], modelDataService: ModelDataService[IO], predictionService: PredictionService[IO], profileStorageService: ProfileStorageService[IO]/*, alertManagerService: AlertManagerService[IO]*/) extends AbstractBehavior[SonarSupervisor.Message] {
+class SonarSupervisor(context: ActorContext[SonarSupervisor.Message])(implicit config: Configuration, metricSpecService: MetricSpecService[IO], modelDataService: ModelDataService[IO], predictionService: PredictionService[IO], profileStorageService: ProfileStorageService[IO]/*, alertManagerService: AlertManagerService[IO]*/) extends AbstractBehavior[SonarSupervisor.Message] with Logging {
   import SonarSupervisor._
   context.log.info("SonarSupervisor actor was started")
   
