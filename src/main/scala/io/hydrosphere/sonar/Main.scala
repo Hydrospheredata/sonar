@@ -105,13 +105,11 @@ object Dependencies {
       new MongoParquetBatchMetricService[F](configuration, mongoClient, modelDataService, checkStorageService)
     }
   
-  def getCheckSlowStorageService[F[_]: Async](configuration: Configuration, modelDataService: ModelDataService[F], checkStorageService: CheckStorageService[F]): F[CheckSlowStorageService[F]] =
-    Async[F].delay {
-      val slowStorageService = new S3ParquetSlowStorageService[F](configuration, modelDataService, checkStorageService)
-      slowStorageService.createBucketIfNotExists()
-      slowStorageService
-    }
-  
+  def getCheckSlowStorageService[F[_]: Async](configuration: Configuration, modelDataService: ModelDataService[F], checkStorageService: CheckStorageService[F]): F[CheckSlowStorageService[F]] = {
+    val slowStorageService = new S3ParquetSlowStorageService[F](configuration, modelDataService, checkStorageService)
+    slowStorageService.createBucketIfNotExists().as(slowStorageService)
+  }
+
   def autoODService[F[_]: Async](client: AutoODServiceRpc[F]): F[AutoODService[F]] = Async[F].delay(new GRPCAutoODService[F](client))
 }
 
