@@ -47,10 +47,9 @@ then
     [[ ! -z "$ALERTING_FRONTEND_URL" ]] && APP_OPTS="$APP_OPTS -Dalerting.frontend-url=$ALERTING_FRONTEND_URL"
     
     [[ ! -z "$FEATURE_LAKE_BUCKET" ]] && APP_OPTS="$APP_OPTS -Dstorage.bucket=$FEATURE_LAKE_BUCKET"
-    [[ ! -z "$FEATURE_LAKE_CREATE_BUCKET" ]] && APP_OPTS="$APP_OPTS -Dstorage.create-bucket=$FEATURE_LAKE_CREATE_BUCKET"
-    
     [[ ! -z "${STORAGE_ACCESS_KEY}" ]] && APP_OPTS="$APP_OPTS -Dstorage.access-key=${STORAGE_ACCESS_KEY}"
-    [[ ! -z "${STORAGE_SECRET_KEY}" ]] && APP_OPTS="$APP_OPTS -Dstorage.secret-key=${STORAGE_SECRET_KEY}" 
+    [[ ! -z "${STORAGE_SECRET_KEY}" ]] && APP_OPTS="$APP_OPTS -Dstorage.secret-key=${STORAGE_SECRET_KEY}"
+    [[ ! -z "${STORAGE_REGION}" ]] && APP_OPTS="$APP_OPTS -Dstorage.region=${STORAGE_REGION}"
     [[ ! -z "${STORAGE_ENDPOINT}" ]] && APP_OPTS="$APP_OPTS -Dstorage.endpoint=${STORAGE_ENDPOINT}"
     [[ ! -z "${STORAGE_PATH_STYLE_ACCESS}" ]] && APP_OPTS="$APP_OPTS -Dstorage.path-style-access=${STORAGE_PATH_STYLE_ACCESS}"
     [[ ! -z "${STORAGE_S3_IMPL}" ]] && APP_OPTS="$APP_OPTS -Dstorage.s3-impl=${STORAGE_S3_IMPL}"

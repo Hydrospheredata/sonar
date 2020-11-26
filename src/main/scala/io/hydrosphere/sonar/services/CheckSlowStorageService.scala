@@ -29,8 +29,7 @@ class S3ParquetSlowStorageService[F[_]: Async](config: Configuration, modelDataS
 
   override def createBucketIfNotExists(): F[Unit] = Async[F].delay {
     val minio = S3Client.fromConfig(config)
-    val exists = minio.bucketExists(config.storage.bucket)
-    if (!exists && config.storage.createBucket)
+    if (!minio.bucketExists(config.storage.bucket))
       minio.makeBucket(config.storage.bucket)
   }
 

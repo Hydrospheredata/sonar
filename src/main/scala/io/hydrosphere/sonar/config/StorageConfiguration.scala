@@ -2,7 +2,7 @@ package io.hydrosphere.sonar.config
 
 case class StorageConfiguration(
    bucket: String,
-   createBucket: Boolean,
+   region: Option[String],
    accessKey: Option[String],
    secretKey: Option[String],
    endpoint: Option[String],
