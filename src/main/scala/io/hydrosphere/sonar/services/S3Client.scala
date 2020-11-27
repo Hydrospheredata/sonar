@@ -11,7 +11,8 @@ object S3Client {
     val maybeMinio = for {
       accessKey <- config.storage.accessKey
       secretKey <- config.storage.secretKey
-    } yield new MinioClient(endpoint, accessKey, secretKey)
+      region <- config.storage.region
+    } yield new MinioClient(endpoint, accessKey, secretKey, region)
     maybeMinio.getOrElse(new MinioClient(endpoint))
   }
 }
