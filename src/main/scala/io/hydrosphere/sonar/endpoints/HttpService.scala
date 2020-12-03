@@ -237,7 +237,7 @@ class HttpService[F[_] : Monad : Effect](
   
   def getSlowChecks = get("monitoring" :: "slow" :: "checks" :: path[Long] :: path[String]) { (modelVersionId: Long, aggregationId: String) =>
     for {
-      jsonStrings <- checkSlowStorageService.getChecksByAggregationId(modelVersionId, aggregationId)
+      jsonStrings <- checkStorageService.getChecksByAggregationId(modelVersionId, aggregationId)
       jsons = jsonStrings.map((jsonString: String) =>
         parse(jsonString) match {
           case Left(value) => Json.Null
@@ -249,10 +249,10 @@ class HttpService[F[_] : Monad : Effect](
   
   def getSubsample = get("monitoring" :: "checks" :: "subsample" :: path[Long] :: param[Int]("size")) { (modelVersionId: Long, size: Int) =>
     for {
-      jsonStrings <- checkSlowStorageService.getCheckSubsample(modelVersionId, size)
+      jsonStrings <- checkStorageService.getCheckSubsample(modelVersionId, size)
       jsons = jsonStrings.map((jsonString: String) =>
         parse(jsonString) match {
-          case Left(value) => Json.Null
+          case Left(_) => Json.Null
           case Right(value) => value
         }
       )

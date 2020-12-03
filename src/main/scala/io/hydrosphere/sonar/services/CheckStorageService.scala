@@ -30,12 +30,15 @@ import org.mongodb.scala.{ClientSession, Completed, Document, MongoClient, Mongo
 import java.util.Calendar
 import java.util.GregorianCalendar
 
+import com.mongodb.client.model.Indexes
 import com.mongodb.{MongoException, ReadConcern, WriteConcern}
+import org.mongodb.scala.bson.collection.mutable
 import org.mongodb.scala.result.UpdateResult
 
 import scala.concurrent.Await
 import scala.concurrent.duration.{Duration, FiniteDuration}
 import scala.collection.JavaConverters._
+import scala.util.Random
 
 
 object CheckStorageService {
@@ -50,9 +53,7 @@ trait CheckStorageService[F[_]] {
 
   def getAggregateDateRange(modelVersionId: Long): F[Option[(Int, Int)]]
 
-  def getAggregateById(modelVersionId: Long, aggregationId: String): F[Option[AggregationMetadata]]
-
-  def getAggregatesForSubsample(modelVersionId: Long, subsampleSize: Int): F[Seq[AggregationMetadata]]
+  def getAggregateById(modelVersionId: Long, aggregationId: String): F[Option[Document]]
 
   def getChecksForComparision(originalModelVersion: Long, aggregationId: String, comparedModelVersionId: Long): F[Seq[String]]
 
@@ -62,9 +63,10 @@ trait CheckStorageService[F[_]] {
   // TODO: can we make this better than returning json representation as a String?
   def getChecks(modelVersionId: Long, from: String, to: String): F[Seq[String]]
   def getChecks(modelVersionId: Long, limit: Int, offset: Int): F[Seq[String]]
+  def getChecksByAggregationId(modelVersionId: Long, aggregationId: String): F[Seq[String]]
   def getAggregates(modelVersionId: Long, limit: Int, offset: Int, from: Option[Int], till: Option[Int]): F[Seq[String]]
-
   def getCheckById(id: String): F[Option[String]]
+  def getCheckSubsample(modelVersionId: Long, size: Int): F[Seq[String]]
 
   // TODO: it should not be mongo specific type
   def getPreviousAggregate(modelVersionId: Long, nextAggregationId: String): F[Option[Document]]
@@ -78,6 +80,14 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
     database.getCollection("checks")
   lazy val aggregatedCheckCollection: MongoCollection[Document] =
     database.getCollection("aggregated_check")
+
+  def createIndexesIfNotExist(): F[Unit] = Async[F].delay {
+    checkCollection.createIndex(Indexes.descending("_hs_model_version_id")).toFuture().liftToAsync[F] *>
+      aggregatedCheckCollection.createIndex(Indexes.descending("_hs_model_version_id")).toFuture().liftToAsync[F] *>
+      aggregatedCheckCollection.createIndex(Indexes.hashed("_hs_first_id")).toFuture().liftToAsync[F] *>
+      aggregatedCheckCollection.createIndex(Indexes.hashed("_hs_last_id")).toFuture().liftToAsync[F].map(_ => Unit)
+  }
+
   
   private def getScore(checks: Iterable[Check]): BsonValue = {
     val checkValues = checks.map(_.check.toInt)
@@ -86,12 +96,9 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
   }
 
   override def getChecksForComparision(originalModelVersion: Long, aggregationId: String, comparedModelVersionId: Long): F[Seq[String]] = for {
-    mayBeAggregate <- getAggregateById(originalModelVersion, aggregationId)
-    aggregate <- mayBeAggregate match {
-      case Some(value) => value.pure[F]
-      case None => Async[F].raiseError[AggregationMetadata](new Exception(s"aggregation id $aggregationId does not exist"))
-    }
-    requestIds <- checkCollection.find(and(equal("_hs_model_version_id", originalModelVersion), and(gte("_id", BsonObjectId(aggregate.firstCheckId)), lte("_id", BsonObjectId(aggregate.lastCheckId))))).toF[F].map(_.map(doc => doc.getString("_hs_request_id")))
+    maybeAggregate <- getAggregateById(originalModelVersion, aggregationId)
+    aggregate = maybeAggregate.get
+    requestIds <- checkCollection.find(and(equal("_hs_model_version_id", originalModelVersion), and(gte("_id", BsonObjectId(aggregate.getObjectId("_hs_first_id").toHexString)), lte("_id", BsonObjectId(aggregate.getObjectId("_hs_last_id").toHexString))))).toF[F].map(_.map(doc => doc.getString("_hs_request_id")))
     _ <- Async[F].delay(println(requestIds))
     checks <- checkCollection.find(and(equal("_hs_model_version_id", comparedModelVersionId), in("_hs_request_id", requestIds: _*))).toF[F].map(_.map(_.toJson(
       settings = JsonWriterSettings
@@ -101,40 +108,33 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
     )))
   } yield checks
 
-  private def aggregateDocumentToAggregationMetadata(doc: Document): AggregationMetadata = AggregationMetadata(
-    id = doc.getObjectId("_id").toHexString,
-    modelVersionId = doc.getInteger("_hs_model_version_id").toLong,
-    firstCheckId = doc.getObjectId("_hs_first_id").toHexString,
-    lastCheckId = doc.getObjectId("_hs_last_id").toHexString,
-    modelName = doc.getString("_hs_model_name"),
-    requestCount = doc.getInteger("_hs_requests"),
-    startTimestamp = doc.getObjectId("_hs_first_id").getTimestamp,
-    endTimestamp = doc.getObjectId("_hs_last_id").getTimestamp,
-  )
 
-
-  override def getAggregateById(modelVersionId: Long, aggregationId: String): F[Option[AggregationMetadata]] =
-    aggregatedCheckCollection
-      .find(and(equal("_hs_model_version_id", modelVersionId), equal("_id", new ObjectId(aggregationId))))
+  override def getChecksByAggregationId(modelVersionId: Long, aggregationId: String): F[Seq[String]] = for {
+    maybeAggregate <- getAggregateById(modelVersionId, aggregationId)
+    ids = maybeAggregate.flatMap {
+      _.get[BsonArray]("_hs_request_ids").map(arr => arr.getValues.asScala.map(_.asObjectId()))
+    }.getOrElse(List.empty)
+    result <- checkCollection
+      .find(and(in("_id", ids:_*), equal("_hs_model_version_id", modelVersionId)))
       .toFuture()
       .liftToAsync[F]
-      .map(_.headOption.map(aggregateDocumentToAggregationMetadata))
+      .map(_.map(_.toJson(
+        settings = JsonWriterSettings
+          .builder()
+          .objectIdConverter((value: ObjectId, writer: StrictJsonWriter) => writer.writeString(value.toHexString))
+          .build()
+      )))
+  } yield result
 
 
-  override def getAggregatesForSubsample(modelVersionId: Long, subsampleSize: Int): F[Seq[AggregationMetadata]] = {
-    for {
-      modelVersion <- modelDataService.getModelVersion(modelVersionId)
-      batchSize <- modelVersion.monitoringConfiguration
-        .fold(Async[F].raiseError[Int](new IllegalArgumentException(s"No config for ${modelVersion}")))(_.batchSize.pure[F])
+  override def getAggregateById(modelVersionId: Long, aggregationId: String): F[Option[Document]] =
+    aggregatedCheckCollection
+      .find(and(equal("_hs_model_version_id", modelVersionId), equal("_id", new ObjectId(aggregationId))))
+      .limit(1)
+      .toFuture()
+      .liftToAsync[F]
+      .map(_.headOption)
 
-      count = math.ceil(subsampleSize.toDouble / batchSize.toDouble).toInt
-
-      result <- aggregatedCheckCollection
-        .aggregate(List(filter(and(equal("_hs_model_version_id", modelVersionId), equal("_hs_requests", batchSize))), sample(count)))
-        .toFuture()
-        .liftToAsync[F]
-    } yield result.map(aggregateDocumentToAggregationMetadata)
-  }
 
   override def getPreviousAggregate(modelVersionId: Long, nextAggregationId: String): F[Option[Document]] = {
     aggregatedCheckCollection
@@ -232,6 +232,22 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
         )
       ))
   }
+
+
+  override def getCheckSubsample(modelVersionId: Long, size: Int): F[Seq[String]] =
+    checkCollection
+      .aggregate(List(
+        `match`(equal("_hs_model_version_id", modelVersionId)),
+        Document("$sample" -> Document("size" -> size))
+      ))
+      .toFuture()
+      .liftToAsync[F]
+      .map(_.map(_.toJson(
+        settings = JsonWriterSettings
+          .builder()
+          .objectIdConverter((value: ObjectId, writer: StrictJsonWriter) => writer.writeString(value.toHexString))
+          .build()
+      )))
 
   override def getAggregates(modelVersionId: Long, limit: Int, offset: Int, from: Option[Int], till: Option[Int]): F[Seq[String]] = {
     val idFilter = equal("_hs_model_version_id", modelVersionId)
