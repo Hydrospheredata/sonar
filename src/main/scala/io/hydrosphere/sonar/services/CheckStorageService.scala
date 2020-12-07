@@ -83,9 +83,10 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
 
   def createIndexesIfNotExist(): F[Unit] = Async[F].delay {
     checkCollection.createIndex(Indexes.descending("_hs_model_version_id")).toFuture().liftToAsync[F] *>
+      checkCollection.createIndex(Indexes.hashed("_hs_request_id")).toFuture().liftToAsync[F] *>
       aggregatedCheckCollection.createIndex(Indexes.descending("_hs_model_version_id")).toFuture().liftToAsync[F] *>
-      aggregatedCheckCollection.createIndex(Indexes.hashed("_hs_first_id")).toFuture().liftToAsync[F] *>
-      aggregatedCheckCollection.createIndex(Indexes.hashed("_hs_last_id")).toFuture().liftToAsync[F].map(_ => Unit)
+      aggregatedCheckCollection.createIndex(Indexes.descending("_hs_first_id")).toFuture().liftToAsync[F] *>
+      aggregatedCheckCollection.createIndex(Indexes.descending("_hs_last_id")).toFuture().liftToAsync[F].map(_ => Unit)
   }
 
   
