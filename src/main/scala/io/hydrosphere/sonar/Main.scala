@@ -89,9 +89,10 @@ object Dependencies {
     } yield instance
   }
 
-  def checkStorageService[F[_]: Async](configuration: Configuration, client: MongoClient, modelDataService: ModelDataService[F]): F[CheckStorageService[F]] = for {
-    instance <- Async[F].delay(new MongoCheckStorageService[F](configuration, client, modelDataService))
-  } yield instance
+  def checkStorageService[F[_]: Async](configuration: Configuration, client: MongoClient, modelDataService: ModelDataService[F]): F[CheckStorageService[F]] = {
+    val checkStorageService = new MongoCheckStorageService[F](configuration, client, modelDataService)
+    checkStorageService.createIndexesIfNotExist().as(checkStorageService)
+  }
 
   def alertManagerService(config: Configuration): AlertService[IO] = {
     config.alerting match {
@@ -100,11 +101,6 @@ object Dependencies {
     }
   }
 
-  def batchMetricService[F[_]: Async](configuration: Configuration, mongoClient: MongoClient, modelDataService: ModelDataService[IO], checkStorageService: CheckStorageService[IO]): F[BatchMetricService[F]] =
-    Async[F].delay{
-      new MongoParquetBatchMetricService[F](configuration, mongoClient, modelDataService, checkStorageService)
-    }
-  
   def getCheckSlowStorageService[F[_]: Async](configuration: Configuration, modelDataService: ModelDataService[F], checkStorageService: CheckStorageService[F]): F[CheckSlowStorageService[F]] = {
     val slowStorageService = new S3ParquetSlowStorageService[F](configuration, modelDataService, checkStorageService)
     slowStorageService.createBucketIfNotExists().as(slowStorageService)
@@ -172,9 +168,6 @@ object Main extends IOApp with Logging {
     httpService <- Dependencies.httpService[IO](metricSpecService, profileStorageService, modelDataService, batchProfileService, checkStorageService, checkSlowService)
     predictionService <- Dependencies.predictionService[IO](gatewayRpc)
     amService = Dependencies.alertManagerService(config)
-    writerService <- Dependencies.batchMetricService[IO](config, mongoClient, modelDataService, checkStorageService)
-    
-    _ <- writerService.start
 
     actorSystem <- createActorSystem[IO](config, metricSpecService, modelDataService, predictionService, profileStorageService)
 
