@@ -2,8 +2,9 @@ package io.hydrosphere.sonar.utils
 
 import io.hydrosphere.serving.tensorflow.tensor.{Uint32Tensor, Uint64Tensor, _}
 import io.hydrosphere.serving.tensorflow.tensor_shape.TensorShapeProto
+import io.hydrosphere.sonar.Logging
 
-object TensorProtoOps {
+object TensorProtoOps extends Logging {
   
   implicit class TensorProtoConversions(tensorProto: TensorProto) {
     
@@ -15,12 +16,18 @@ object TensorProtoOps {
       case integers@(_: Int32Tensor | _: Uint32Tensor | _: Uint8Tensor | _: Int8Tensor | _: Int16Tensor) =>
         Some(integers.data.asInstanceOf[Seq[Int]].map(_.toDouble))
       case BoolTensor(_, data) => Some(data.map(x => if (x) 1.0 else 0.0))
-      case _ => None
+      case unknownTensorType => {
+        logger.warn(s"$unknownTensorType cannot be cast to Seq[Double]")
+        None
+      }
     }
     
     def toStrings: Option[Seq[String]] = TypedTensorFactory.create(tensorProto) match {
       case StringTensor(_, data) => Some(data)
-      case _ => None
+      case unknownTensorType => {
+        logger.warn(s"$unknownTensorType cannot be cast to Seq[String]")
+        None
+      }
     }
     
   }
