@@ -13,7 +13,8 @@ object ExecutionInformationOps extends Logging {
       val maybeFlat = for {
         r <- ei.responseOrError.response
         output <- r.outputs.get(output)
-      } yield output.toDoubles
+        value <- output.toDoubles
+      } yield value
       maybeFlat.getOrElse(Seq.empty)
     }
 
@@ -21,7 +22,8 @@ object ExecutionInformationOps extends Logging {
       val maybeFlat = for {
         r <- ei.request
         input <- r.inputs.get(input)
-      } yield input.toDoubles
+        value <- input.toDoubles
+      } yield value
       maybeFlat.getOrElse(Seq.empty)
     }
 
@@ -29,7 +31,8 @@ object ExecutionInformationOps extends Logging {
       val maybeFlat = for {
         r <- ei.responseOrError.response
         output <- r.outputs.get(output)
-      } yield output.toStrings
+        value <- output.toStrings
+      } yield value
       maybeFlat.getOrElse(Seq.empty)
     }
     
@@ -37,7 +40,8 @@ object ExecutionInformationOps extends Logging {
       val maybeFlat = for {
         r <- ei.request
         input <- r.inputs.get(input)
-      } yield input.toStrings
+        value <- input.toStrings
+      } yield value
       maybeFlat.getOrElse(Seq.empty)
     }
     
