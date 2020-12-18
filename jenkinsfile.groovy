@@ -227,7 +227,7 @@ node('hydrocentral') {
                 }
                 bumpGrpc(grpcVersion, SEARCHGRPC, params.patchVersion, SEARCHPATH) 
                 buildDocker()
-                pushDocker(REGISTRYURL, SERVICEIMAGENAME+":$newVersion")
+                pushDocker(REGISTRYURL, SERVICENAME+":$newVersion")
                 //Update helm and docker-compose if release 
                 if (params.release == 'global'){
                     releaseService(oldVersion, newVersion)
