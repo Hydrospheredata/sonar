@@ -1,6 +1,6 @@
 package io.hydrosphere.sonar.utils.checks
 
-import io.hydrosphere.serving.monitoring.api.ExecutionInformation
+import io.hydrosphere.monitoring.proto.sonar.entities.ExecutionInformation
 import io.hydrosphere.sonar.Logging
 import io.hydrosphere.sonar.terms.{Check, NumericalProfile, Profile}
 import io.hydrosphere.sonar.utils.ExecutionInformationOps._

@@ -15,8 +15,8 @@ import eu.timepit.refined.string._
 import io.circe.generic.auto._
 import io.circe.refined._
 import io.circe.syntax._
-import io.hydrosphere.serving.manager.grpc.entities.ModelVersion
-import io.hydrosphere.serving.monitoring.api.ExecutionInformation
+import io.hydrosphere.serving.proto.manager.entities.ModelVersion
+import io.hydrosphere.monitoring.proto.sonar.entities.ExecutionInformation
 import io.hydrosphere.sonar.{Logging, URLString}
 import io.hydrosphere.sonar.terms.Check
 import io.hydrosphere.sonar.utils.FutureOps._
@@ -128,7 +128,7 @@ class PrometheusAMService[F[_]](
           "requestId" -> meta.requestId
         ) ++ meta.appInfo.toList.flatMap { appInfo =>
           List(
-            "applicationId" -> appInfo.applicationId.toString,
+            "applicationName" -> appInfo.applicationName,
             "applicationStageId" -> appInfo.stageId
           )
         }
@@ -153,8 +153,7 @@ class PrometheusAMService[F[_]](
 
   def generatorUrl(modelVersion: ModelVersion): URLString = {
     val maybeDashboardUrl = for {
-      model <- modelVersion.model
-      uri <- Try(baseURI.resolve(s"./models/${model.id}/${modelVersion.id}/monitoring")).toOption
+      uri <- Try(baseURI.resolve(s"./models/${modelVersion.name}/${modelVersion.id}/monitoring")).toOption
       urlString <- refineV[Url](uri.toString).toOption
     } yield urlString
     maybeDashboardUrl.getOrElse(baseUrl)

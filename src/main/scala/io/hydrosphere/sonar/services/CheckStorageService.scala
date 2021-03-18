@@ -4,10 +4,10 @@ import cats.effect.concurrent.Ref
 import cats.effect.Async
 import cats.implicits._
 import com.google.protobuf.ByteString
-import io.hydrosphere.serving.manager.grpc.entities.ModelVersion
-import io.hydrosphere.serving.monitoring.api.ExecutionInformation
-import io.hydrosphere.serving.tensorflow.tensor.TensorProto
-import io.hydrosphere.serving.tensorflow.types.DataType
+import io.hydrosphere.serving.proto.manager.entities.ModelVersion
+import io.hydrosphere.serving.proto.contract.types.DataType
+import io.hydrosphere.serving.proto.contract.tensor.Tensor
+import io.hydrosphere.monitoring.proto.sonar.entities.ExecutionInformation
 import io.hydrosphere.sonar.Logging
 import io.hydrosphere.sonar.services.ModelDataService
 import io.hydrosphere.sonar.config.Configuration
@@ -277,7 +277,7 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
 //    logger.info(s"${modelVersion.id} saveCheckedRequest with ${checks.size} checks and ${metricChecks.size} metrics")
     case class ByFieldChecks(checks: Seq[(String, BsonValue)], aggregates: Seq[(String, BsonValue)])
 
-    def tensorDataToBson(tensorProto: TensorProto): BsonValue = {
+    def tensorDataToBson(tensorProto: Tensor): BsonValue = {
       val isScalar = tensorProto.tensorShape.exists(_.isScalar)
       def getter[A](data: Seq[A], bsonValue: A => BsonValue): BsonValue = {
         if (isScalar) {
@@ -300,7 +300,6 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
         case DataType.DT_QINT8 => getter(tensorProto.intVal, BsonNumber.apply)
         case DataType.DT_QUINT8 => getter(tensorProto.intVal, BsonNumber.apply)
         case DataType.DT_QINT32 => getter(tensorProto.intVal, BsonNumber.apply)
-        case DataType.DT_BFLOAT16 => getter(tensorProto.halfVal, BsonNumber.apply)
         case DataType.DT_QINT16 => getter(tensorProto.intVal, BsonNumber.apply)
         case DataType.DT_QUINT16 => getter(tensorProto.intVal, BsonNumber.apply)
         case DataType.DT_UINT16 => getter(tensorProto.intVal, BsonNumber.apply)
@@ -311,12 +310,6 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
         case DataType.DT_MAP =>
           logger.warn(s"Cannot serialize DT_MAP")
           BsonNull() // TODO: serialize DT_MAP type
-        case DataType.DT_RESOURCE =>
-          logger.warn(s"Cannot serialize DT_RESOURCE")
-          BsonNull() // TODO: serialize DT_RESOURCE type
-        case DataType.DT_VARIANT =>
-          logger.warn(s"Cannot serialize DT_VARIANT")
-          BsonNull() // TODO: serialize DT_VARIANT type
         case DataType.DT_INVALID =>
           logger.warn(s"DataType is DT_INVALID")
           BsonNull()
@@ -324,13 +317,12 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
       }
     }
 
-    val maybeFeilds = for {
-      contract <- modelVersion.contract
-      predict <- contract.predict
-    } yield predict.inputs ++ predict.outputs
+    val maybeFields = for {
+      signature <- modelVersion.signature
+    } yield signature.inputs ++ signature.outputs
 
     val maybeBsonChecks = for {
-      fields <- maybeFeilds
+      fields <- maybeFields
       request <- ei.request
       response <- ei.eitherResponseOrError.toOption // TODO: there will be no metrics if error
       data = request.inputs ++ response.outputs
@@ -363,7 +355,7 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
 
 
     val bsonLatency = ei.metadata.map(m => BsonNumber(m.latency)).getOrElse(BsonNull())
-    val bsonError = ei.eitherResponseOrError.left.toOption.map(e => BsonString(e.errorMessage)).getOrElse(BsonNull())
+    val bsonError = ei.eitherResponseOrError.left.toOption.map(BsonString(_)).getOrElse(BsonNull())
     val bsonScore = getScore(checks.values.flatten)
     val overallScore = getScore(metricChecks.values)
     val objectId = BsonObjectId()
@@ -380,7 +372,7 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
           )
         }))
     }
-    val allRawChecks = maybeFeilds.getOrElse(Seq.empty).map(field => {
+    val allRawChecks = maybeFields.getOrElse(Seq.empty).map(field => {
       field.name -> rawChecks.getOrElse(field.name, BsonArray())
     })
     val metricChecksBson = BsonDocument(metricChecks.map {
@@ -404,7 +396,7 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
       ("_hs_score" -> bsonScore) :+
       ("_hs_overall_score" -> overallScore) :+
       ("_hs_model_version_id" -> BsonNumber(modelVersion.id)) :+
-      ("_hs_model_name" -> BsonString(modelVersion.model.map(_.name).getOrElse("_unknown"))) :+
+      ("_hs_model_name" -> BsonString(modelVersion.name)) :+
       ("_hs_model_incremental_version" -> BsonNumber(modelVersion.version)) :+
       ("_hs_request_id" -> ei.metadata.map(_.requestId).map(BsonString.apply).getOrElse(BsonNull())) :+
       ("_hs_timestamp" -> BsonNumber(date.getTime)) :+
@@ -420,7 +412,7 @@ class MongoCheckStorageService[F[_]: Async](config: Configuration, mongoClient: 
       "$inc" -> increments,
       "$set" -> Document("_hs_last_id" -> objectId),
       "$push" -> Document("_hs_request_ids" -> objectId),
-      "$setOnInsert" -> Document("_hs_first_id" -> objectId, "_hs_model_version_id" -> BsonNumber(modelVersion.id), "_hs_model_name" -> BsonString(modelVersion.model.map(_.name).getOrElse("_unknown")))
+      "$setOnInsert" -> Document("_hs_first_id" -> objectId, "_hs_model_version_id" -> BsonNumber(modelVersion.id), "_hs_model_name" -> BsonString(modelVersion.name))
     )
     val aggregatesFilter: conversions.Bson = and(equal("_hs_model_version_id", modelVersion.id), lt("_hs_requests", modelVersion.monitoringConfiguration.map(_.batchSize).getOrElse(config.monitoring.batchSize)))
     

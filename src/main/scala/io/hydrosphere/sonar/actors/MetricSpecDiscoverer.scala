@@ -5,10 +5,9 @@ import java.util.UUID
 import akka.actor.typed.scaladsl._
 import akka.actor.typed.{ActorRef, Behavior}
 import io.grpc.stub.StreamObserver
-import io.hydrosphere.serving.discovery.serving.MetricSpecDiscoveryEvent
-import io.hydrosphere.serving.discovery.serving.ServingDiscoveryGrpc.ServingDiscovery
-import io.hydrosphere.serving.manager.grpc.entities.ThresholdConfig.CmpOp
-import io.hydrosphere.serving.manager.grpc.entities.{ThresholdConfig, MetricSpec => GMetricSpec}
+import io.hydrosphere.serving.proto.discovery.api.MetricSpecDiscoveryEvent
+import io.hydrosphere.serving.proto.discovery.api.ServingDiscoveryGrpc.ServingDiscovery
+import io.hydrosphere.serving.proto.manager.entities.{MetricSpec => GMetricSpec}
 import io.hydrosphere.sonar.terms._
 
 import scala.collection.concurrent.TrieMap

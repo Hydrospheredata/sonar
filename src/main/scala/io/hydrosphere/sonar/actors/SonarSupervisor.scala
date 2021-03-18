@@ -3,8 +3,8 @@ package io.hydrosphere.sonar.actors
 import akka.actor.typed.scaladsl.{AbstractBehavior, ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior, PostStop, Signal, SupervisorStrategy}
 import cats.effect.IO
-import io.hydrosphere.serving.manager.data_profile_types.DataProfileType
-import io.hydrosphere.serving.monitoring.api.ExecutionInformation
+import io.hydrosphere.serving.proto.contract.types.DataProfileType
+import io.hydrosphere.monitoring.proto.sonar.entities.ExecutionInformation
 import io.hydrosphere.sonar.actors.processors.profiles.{NumericalProfileProcessor, TextProfileProcessor}
 import io.hydrosphere.sonar.actors.writers.ProfileWriter
 import io.hydrosphere.sonar.config.Configuration
@@ -72,7 +72,7 @@ class SonarSupervisor(context: ActorContext[SonarSupervisor.Message])(implicit c
           // Each DataProfileType *can* have a processor, otherwise it will be ignored
           modelDataService.getModelVersion(modelVersionId).unsafeRunAsync {
             case Right(modelVersion) =>
-              modelVersion.contract.flatMap(_.predict) match {
+              modelVersion.signature match {
                 case Some(signature) =>
                   val inputs = signature.inputs.map(_.profile)
                   val outputs = signature.outputs.map(_.profile)

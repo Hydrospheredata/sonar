@@ -1,28 +1,25 @@
 package io.hydrosphere.sonar.actors.processors.profiles
 
-import io.hydrosphere.serving.manager.data_profile_types.DataProfileType
-import io.hydrosphere.serving.manager.grpc.entities.ModelVersion
-import io.hydrosphere.serving.monitoring.api.ExecutionInformation
-import io.hydrosphere.serving.tensorflow.api.predict.PredictRequest
+import io.hydrosphere.serving.proto.manager.entities.ModelVersion
+import io.hydrosphere.serving.proto.contract.types.DataProfileType
+import io.hydrosphere.serving.proto.runtime.api.{PredictRequest, PredictResponse}
+import io.hydrosphere.monitoring.proto.sonar.entities.ExecutionInformation
 import io.hydrosphere.sonar.actors.Processor
 import io.hydrosphere.sonar.actors.Processor.ProfileRequest
 import io.hydrosphere.sonar.Logging
-import io.hydrosphere.serving.tensorflow.api.predict.PredictResponse
 
 trait ProfileProcessor extends Logging {
   def filterInputs(modelVersion: ModelVersion, dataType: DataProfileType): Set[String] = {
     val maybeDataTypes = for {
-      contract <- modelVersion.contract
-      predict <- contract.predict
-    } yield predict.inputs.map(i => (i.name, i.profile)).toMap.filter({ case (_, tpe) => tpe == dataType }).keys.toSet
+      signature <- modelVersion.signature
+    } yield signature.inputs.map(i => (i.name, i.profile)).toMap.filter({ case (_, tpe) => tpe == dataType }).keys.toSet
     maybeDataTypes.getOrElse(Set.empty[String])
   }
 
   def filterOutputs(modelVersion: ModelVersion, dataType: DataProfileType): Set[String] = {
     val maybeDataTypes = for {
-      contract <- modelVersion.contract
-      predict <- contract.predict
-    } yield predict.outputs.map(i => (i.name, i.profile)).toMap.filter({ case (_, tpe) => tpe == dataType }).keys.toSet
+      signature <- modelVersion.signature
+    } yield signature.outputs.map(i => (i.name, i.profile)).toMap.filter({ case (_, tpe) => tpe == dataType }).keys.toSet
     maybeDataTypes.getOrElse(Set.empty[String])
   }
 
@@ -31,7 +28,7 @@ trait ProfileProcessor extends Logging {
     val outputs = filterOutputs(modelVersion, dataType)
     ProfileRequest(
       payload = ExecutionInformation(
-        request = request.payload.request.map(r => PredictRequest(r.modelSpec, r.inputs.filter({ case (key, _) => inputs.contains(key) }))),
+        request = request.payload.request.map(r => PredictRequest(r.inputs.filter({ case (key, _) => inputs.contains(key) }))),
         metadata = request.payload.metadata,
         responseOrError = if (request.payload.responseOrError.isResponse) {
           request.payload.responseOrError.response match {

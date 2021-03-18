@@ -1,8 +1,8 @@
 package io.hydrosphere.sonar.utils
 
-import io.hydrosphere.serving.contract.model_field.ModelField
-import io.hydrosphere.serving.contract.model_field.ModelField.TypeOrSubfields
-import io.hydrosphere.serving.tensorflow.types.DataType
+import io.hydrosphere.serving.proto.contract.field.ModelField
+import io.hydrosphere.serving.proto.contract.field.ModelField.TypeOrSubfields
+import io.hydrosphere.serving.proto.contract.types.DataType
 
 object ModelFieldOps {
   

@@ -15,8 +15,8 @@ import edu.stanford.nlp.process.{CoreLabelTokenFactory, PTBTokenizer, TokenizerF
 import edu.stanford.nlp.sentiment.SentimentCoreAnnotations
 import edu.stanford.nlp.tagger.maxent.MaxentTagger
 import edu.stanford.nlp.util.CoreMap
-import io.hydrosphere.serving.manager.data_profile_types.DataProfileType
-import io.hydrosphere.serving.manager.grpc.entities.ModelVersion
+import io.hydrosphere.serving.proto.contract.types.DataProfileType
+import io.hydrosphere.serving.proto.manager.entities.ModelVersion
 import io.hydrosphere.sonar.actors.Processor
 import io.hydrosphere.sonar.actors.writers.ProfileWriter
 import io.hydrosphere.sonar.config.Configuration

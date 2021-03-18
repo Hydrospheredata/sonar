@@ -1,6 +1,6 @@
 package io.hydrosphere.sonar.actors
 
-import io.hydrosphere.serving.monitoring.api.ExecutionInformation
+import io.hydrosphere.monitoring.proto.sonar.entities.ExecutionInformation
 
 object Processor {
   trait ProfileMessage
