@@ -29,7 +29,7 @@ APP_OPTS=""
 [[ -z "$PROFILE_TEXT_LEXPARSER_PATH" ]] && PROFILE_TEXT_LEXPARSER_PATH="/data/lexparser/englishPCFG.ser.gz"
 [[ -z "$PROFILE_TEXT_SENTIMENT_PATH" ]] && PROFILE_TEXT_SENTIMENT_PATH="/data/sentiment/sentiment.ser.gz"
 
-[[ ! -z "${STORAGE_REGION}" ]] && STORAGE_REGION="us-west-1"
+[[ -z "${STORAGE_REGION}" ]] && STORAGE_REGION="us-west-1"
 
 [ -z "$JAVA_OPTS" ] && JAVA_OPTS="-Xmx$JAVA_XMX -Xms$JAVA_XMX" 
 

@@ -11,8 +11,13 @@ object S3Client {
     val maybeMinio = for {
       accessKey <- config.storage.accessKey
       secretKey <- config.storage.secretKey
-      region <- config.storage.region
-    } yield new MinioClient(endpoint, accessKey, secretKey, region)
+    } yield {
+      // Null is scary but it's a part of their API.
+      // They have overloaded ctor for (endpoint, accessKey, secretKey) so null is acceptable.
+      // see MinioClient(String endpoint, int port, String accessKey, String secretKey, boolean secure)
+      new MinioClient(endpoint, accessKey, secretKey, config.storage.region.orNull)
+    }
+
     maybeMinio.getOrElse(new MinioClient(endpoint))
   }
 }
