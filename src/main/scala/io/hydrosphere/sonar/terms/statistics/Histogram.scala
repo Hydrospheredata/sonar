@@ -2,8 +2,10 @@ package io.hydrosphere.sonar.terms.statistics
 
 import java.math.{MathContext, RoundingMode}
 
+import io.circe.generic.JsonCodec
 import io.hydrosphere.sonar.terms.NumericalPreprocessedProfile
 
+@JsonCodec
 case class Histogram(
   min: Double, 
   max: Double, 

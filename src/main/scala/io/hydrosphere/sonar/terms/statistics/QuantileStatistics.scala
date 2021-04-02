@@ -1,7 +1,9 @@
 package io.hydrosphere.sonar.terms.statistics
 
+import io.circe.generic.JsonCodec
 import io.hydrosphere.sonar.terms.NumericalPreprocessedProfile
 
+@JsonCodec
 case class QuantileStatistics(
   min: Double, 
   max: Double, 

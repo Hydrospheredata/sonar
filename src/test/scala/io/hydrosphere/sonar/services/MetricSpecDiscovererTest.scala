@@ -3,9 +3,9 @@ package io.hydrosphere.sonar.services
 import akka.actor.testkit.typed.scaladsl.{ActorTestKit, TestProbe}
 import com.google.protobuf.empty.Empty
 import io.grpc.stub.StreamObserver
-import io.hydrosphere.serving.discovery.serving.ServingDiscoveryGrpc.ServingDiscovery
-import io.hydrosphere.serving.discovery.serving.{ApplicationDiscoveryEvent, MetricSpecDiscoveryEvent, ServableDiscoveryEvent}
-import io.hydrosphere.serving.manager.grpc.entities.{CustomModelMetric, MetricSpec, Servable, ThresholdConfig}
+import io.hydrosphere.serving.proto.discovery.api.ServingDiscoveryGrpc.ServingDiscovery
+import io.hydrosphere.serving.proto.discovery.api.{ApplicationDiscoveryEvent, MetricSpecDiscoveryEvent, ServableDiscoveryEvent}
+import io.hydrosphere.serving.proto.manager.entities.{CustomModelMetric, MetricSpec, Servable, ThresholdConfig}
 import io.hydrosphere.sonar.actors.MetricSpecDiscoverer
 import io.hydrosphere.sonar.actors.MetricSpecDiscoverer.{GetAll, GetAllResponse}
 import org.scalatest.FunSpec

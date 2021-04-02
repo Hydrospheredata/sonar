@@ -12,12 +12,13 @@ import com.amazonaws.services.s3.model._
 import enumeratum.{Enum, EnumEntry}
 import fs2.io.file
 import fs2.{Chunk, Pull, Stream, text}
-import io.hydrosphere.serving.manager.data_profile_types.DataProfileType
-import io.hydrosphere.serving.manager.grpc.entities.ModelVersion
+import io.circe.generic.JsonCodec
+import io.hydrosphere.serving.proto.contract.types.DataProfileType
+import io.hydrosphere.serving.proto.manager.entities.ModelVersion
 import io.hydrosphere.sonar.Logging
 import io.hydrosphere.sonar.config.Configuration
 import io.hydrosphere.sonar.terms.ProfileSourceKind
-import io.hydrosphere.sonar.utils.ContractOps._
+import io.hydrosphere.sonar.utils.SignatureOps._
 import io.hydrosphere.sonar.utils.mongo.ObservableExt._
 import io.hydrosphere.sonar.utils.profiles.NumericalProfileUtils
 import io.hydrosphere.sonar.utils.{CollectionOps, CsvRowSizeMismatch, ProfileIsAlreadyProcessing}
@@ -37,6 +38,7 @@ trait TrainingProfileService[F[_], S[_[_], _]] {
 }
 
 object TrainingProfileService {
+  @JsonCodec
   sealed trait ProcessingStatus extends EnumEntry
 
   object ProcessingStatus extends Enum[ProcessingStatus] {
@@ -96,7 +98,7 @@ class TrainingProfileServiceInterpreter(config: Configuration, state: Ref[IO, Ma
       Document(
         ModelVersionId -> modelVersion.id,
         PathToData -> path,
-        "model-name" -> modelVersion.model.map(_.name).getOrElse("<NONE>"),
+        "model-name" -> modelVersion.name,
         "model-version" -> modelVersion.version,
       )
     }
@@ -169,7 +171,7 @@ class TrainingProfileServiceInterpreter(config: Configuration, state: Ref[IO, Ma
           .mapValues(_.toSeq.sortBy(_._1).map(_._2)))
       )
       .map(_.getOrElse(Map.empty))
-      .map(_.filterKeys(key => modelVersion.contract
+      .map(_.filterKeys(key => modelVersion.signature
         .map(_.extractProfiledFields)
         .getOrElse(Seq.empty)
         .exists(_.name == key)
@@ -177,7 +179,7 @@ class TrainingProfileServiceInterpreter(config: Configuration, state: Ref[IO, Ma
       .filter(_.nonEmpty)
       .chunkN(100)
       .flatMap(mapRows => {
-        val numericalFields = modelVersion.contract
+        val numericalFields = modelVersion.signature
           .map(_.extractAllFields)
           .getOrElse(Seq.empty)
           .filter(_.profile == DataProfileType.NUMERICAL)

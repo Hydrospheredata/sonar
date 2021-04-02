@@ -1,8 +1,7 @@
 package io.hydrosphere.sonar.utils
 
-import io.hydrosphere.serving.monitoring.api.ExecutionInformation
-import io.hydrosphere.serving.monitoring.metadata.ExecutionError
-import io.hydrosphere.serving.tensorflow.api.predict.PredictResponse
+import io.hydrosphere.monitoring.proto.sonar.entities.ExecutionInformation
+import io.hydrosphere.serving.proto.runtime.api.PredictResponse
 import io.hydrosphere.sonar.Logging
 import io.hydrosphere.sonar.utils.TensorProtoOps._
 
@@ -44,26 +43,28 @@ object ExecutionInformationOps extends Logging {
       } yield value
       maybeFlat.getOrElse(Seq.empty)
     }
+
+// TODO: remove if not required
+//
+//    def getTimestamp: Long = {
+//      val maybeOriginTimestamp = for {
+//        metadata <- ei.metadata
+//        traceData <- metadata.originTraceData
+//      } yield traceData.ts
+//
+//      val maybeTimestamp = for {
+//        metadata <- ei.metadata
+//        traceData <- metadata.traceData
+//      } yield traceData.ts
+//
+//      (maybeOriginTimestamp, maybeTimestamp) match {
+//        case (Some(ts), _) => ts
+//        case (None, Some(ts)) => ts
+//        case (None, None) => System.currentTimeMillis()
+//      }
+//    }
     
-    def getTimestamp: Long = {
-      val maybeOriginTimestamp = for {
-        metadata <- ei.metadata
-        traceData <- metadata.originTraceData
-      } yield traceData.ts
-      
-      val maybeTimestamp = for {
-        metadata <- ei.metadata
-        traceData <- metadata.traceData
-      } yield traceData.ts
-      
-      (maybeOriginTimestamp, maybeTimestamp) match {
-        case (Some(ts), _) => ts
-        case (None, Some(ts)) => ts
-        case (None, None) => System.currentTimeMillis()
-      }
-    }
-    
-    def eitherResponseOrError: Either[ExecutionError, PredictResponse] = {
+    def eitherResponseOrError: Either[String, PredictResponse] = {
       if (ei.responseOrError.isError)
         Left(ei.getError)
       else

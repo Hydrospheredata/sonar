@@ -1,12 +1,13 @@
 package io.hydrosphere.sonar.utils
 
-import io.hydrosphere.serving.tensorflow.tensor.{Uint32Tensor, Uint64Tensor, _}
-import io.hydrosphere.serving.tensorflow.tensor_shape.TensorShapeProto
+import io.hydrosphere.serving.proto.contract.tensor.definitions._
+import io.hydrosphere.serving.proto.contract.tensor.Tensor
+import io.hydrosphere.serving.proto.contract.tensor.TensorShape
 import io.hydrosphere.sonar.Logging
 
 object TensorProtoOps extends Logging {
   
-  implicit class TensorProtoConversions(tensorProto: TensorProto) {
+  implicit class TensorProtoConversions(tensorProto: Tensor) {
     
     def toDoubles: Option[Seq[Double]] = TypedTensorFactory.create(tensorProto) match {
       case DoubleTensor(_, data) => Some(data)
@@ -32,7 +33,7 @@ object TensorProtoOps extends Logging {
     
   }
   
-  implicit class TensorShapeProtoGetters(tensorShapeProto: TensorShapeProto) {
-    def isScalar: Boolean = tensorShapeProto.dim.isEmpty
+  implicit class TensorShapeProtoGetters(tensorShapeProto: TensorShape) {
+    def isScalar: Boolean = tensorShapeProto.dims.isEmpty
   }
 }

@@ -6,7 +6,7 @@ import akka.actor.typed.scaladsl.AskPattern._
 import akka.util.Timeout
 import cats.effect.Async
 import cats.implicits._
-import io.hydrosphere.serving.manager.grpc.entities.MetricSpec
+import io.hydrosphere.serving.proto.manager.entities.MetricSpec
 import io.hydrosphere.sonar.actors.MetricSpecDiscoverer._
 import io.hydrosphere.sonar.terms._
 

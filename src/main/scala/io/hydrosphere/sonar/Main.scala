@@ -13,12 +13,12 @@ import com.mongodb.MongoCredential.createCredential
 import com.twitter.finagle.Http
 import io.grpc.netty.NettyServerBuilder
 import io.grpc.{Channel, ClientInterceptors, ManagedChannelBuilder, Server}
-import io.hydrosphere.serving.discovery.serving.ServingDiscoveryGrpc
-import io.hydrosphere.serving.discovery.serving.ServingDiscoveryGrpc.ServingDiscovery
+import io.hydrosphere.serving.proto.discovery.api.ServingDiscoveryGrpc
+import io.hydrosphere.serving.proto.discovery.api.ServingDiscoveryGrpc.ServingDiscovery
 import io.hydrosphere.serving.grpc.{AuthorityReplacerInterceptor, BuilderWrapper, Headers}
-import io.hydrosphere.serving.manager.grpc.entities.ModelVersion
-import io.hydrosphere.serving.monitoring.api.MonitoringServiceGrpc
-import io.hydrosphere.serving.monitoring.api.MonitoringServiceGrpc.MonitoringService
+import io.hydrosphere.serving.proto.manager.entities.ModelVersion
+import io.hydrosphere.monitoring.proto.sonar.api.MonitoringServiceGrpc
+import io.hydrosphere.monitoring.proto.sonar.api.MonitoringServiceGrpc.MonitoringService
 import io.hydrosphere.sonar.actors.MetricSpecDiscoverer.DiscoveryMsg
 import io.hydrosphere.sonar.actors.{MetricSpecDiscoverer, SonarSupervisor}
 import io.hydrosphere.sonar.config.Configuration
@@ -114,7 +114,7 @@ object Main extends IOApp with Logging {
   def createActorSystem[F[_]: Sync](config: Configuration, metricSpecService: MetricSpecService[IO], modelDataService: ModelDataService[IO], predictionService: PredictionService[IO], profileStorageService: ProfileStorageService[IO]/*, alertManagerService: AlertManagerService[IO]*/): F[ActorSystem[SonarSupervisor.Message]] =
     Sync[F].delay(ActorSystem[SonarSupervisor.Message](SonarSupervisor(config, metricSpecService, modelDataService, predictionService, profileStorageService/*, alertManagerService*/), "sonar"))
 
-  def discoveryActorSystem[F[_]: Sync](reconnect: FiniteDuration,stub: ServingDiscovery): F[ActorSystem[DiscoveryMsg]] = Sync[F].delay {
+  def discoveryActorSystem[F[_]: Sync](reconnect: FiniteDuration, stub: ServingDiscovery): F[ActorSystem[DiscoveryMsg]] = Sync[F].delay {
     ActorSystem[DiscoveryMsg](MetricSpecDiscoverer(reconnect, stub), "serving-discovery")
   }
 

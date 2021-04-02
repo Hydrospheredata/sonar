@@ -2,10 +2,10 @@ package io.hydrosphere.sonar.actors.processors.profiles
 
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import akka.actor.typed.{ActorRef, Behavior}
-import io.hydrosphere.serving.manager.data_profile_types.DataProfileType
-import io.hydrosphere.serving.manager.grpc.entities.ModelVersion
-import io.hydrosphere.serving.monitoring.api.ExecutionInformation
-import io.hydrosphere.serving.tensorflow.api.predict.PredictRequest
+import io.hydrosphere.serving.proto.contract.types.DataProfileType
+import io.hydrosphere.serving.proto.manager.entities.ModelVersion
+import io.hydrosphere.serving.proto.runtime.api.PredictRequest
+import io.hydrosphere.monitoring.proto.sonar.entities.ExecutionInformation
 import io.hydrosphere.sonar.actors.Processor
 import io.hydrosphere.sonar.actors.Processor.ProfileRequest
 import io.hydrosphere.sonar.actors.writers.ProfileWriter

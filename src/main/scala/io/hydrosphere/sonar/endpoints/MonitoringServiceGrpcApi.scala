@@ -4,12 +4,12 @@ import akka.actor.typed.ActorRef
 import cats.effect.IO
 import cats.implicits._
 import com.google.protobuf.empty.Empty
-import io.hydrosphere.serving.manager.grpc.entities.MetricSpec
-import io.hydrosphere.serving.manager.grpc.entities.ThresholdConfig.CmpOp._
-import io.hydrosphere.serving.monitoring.api.ExecutionInformation
-import io.hydrosphere.serving.monitoring.api.MonitoringServiceGrpc.MonitoringService
-import io.hydrosphere.serving.monitoring.metadata.ExecutionMetadata
-import io.hydrosphere.serving.tensorflow.tensor.TensorProto
+import io.hydrosphere.serving.proto.manager.entities.MetricSpec
+import io.hydrosphere.serving.proto.manager.entities.ThresholdConfig.CmpOp._
+import io.hydrosphere.serving.proto.contract.tensor.Tensor
+import io.hydrosphere.monitoring.proto.sonar.entities.ExecutionInformation
+import io.hydrosphere.monitoring.proto.sonar.entities.ExecutionMetadata
+import io.hydrosphere.monitoring.proto.sonar.api.MonitoringServiceGrpc.MonitoringService
 import io.hydrosphere.sonar.Logging
 import io.hydrosphere.sonar.actors.SonarSupervisor
 import io.hydrosphere.sonar.services._
@@ -65,9 +65,9 @@ class MonitoringServiceGrpcApi(
     }
   }
 
-  private def processRequest(req: Map[String, TensorProto], metricSpecs: List[MetricSpec], metadata: ExecutionMetadata) = {
+  private def processRequest(req: Map[String, Tensor], metricSpecs: List[MetricSpec], metadata: ExecutionMetadata) = {
     metricSpecs.traverse {
-      case MetricSpec(id, name, _, config) =>
+      case MetricSpec(id, name, _, config, _) =>
         val maybeTask = for {
           conf <- config
           servable <- conf.servable

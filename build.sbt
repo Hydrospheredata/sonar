@@ -19,12 +19,14 @@ scalacOptions ++= Seq(
 )
 
 resolvers += "Flyway" at "https://flywaydb.org/repo"
+resolvers += Resolver.sonatypeRepo("releases")
 
 libraryDependencies ++= Dependencies.projectDeps
 
 cancelable in Global := true
 
 enablePlugins(BuildInfoPlugin, sbtdocker.DockerPlugin)
+addCompilerPlugin("org.scalamacros" % "paradise" % "2.1.0" cross CrossVersion.full)
 
 dockerfile in docker := {
   val dockerFilesLocation = baseDirectory.value / "src/main/docker/"

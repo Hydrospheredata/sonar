@@ -1,8 +1,7 @@
 package io.hydrosphere.sonar.utils
 
-import io.hydrosphere.serving.contract.model_field.ModelField
-import io.hydrosphere.serving.manager.data_profile_types.DataProfileType
-import io.hydrosphere.serving.tensorflow.types.DataType
+import io.hydrosphere.serving.proto.contract.field.ModelField
+import io.hydrosphere.serving.proto.contract.types.{DataProfileType, DataType}
 import org.apache.avro.{Schema, SchemaBuilder}
 import io.hydrosphere.sonar.utils.TensorProtoOps._
 import io.hydrosphere.sonar.utils.ModelFieldOps._
@@ -55,14 +54,11 @@ object ParquetHelper {
             case DataType.DT_QINT8 => setType(_.intType().noDefault(), _.intType())
             case DataType.DT_QUINT8 => setType(_.intType().noDefault(), _.intType())
             case DataType.DT_QINT32 => setType(_.intType().noDefault(), _.intType())
-            case DataType.DT_BFLOAT16 => setType(_.intType().noDefault(), _.intType())
             case DataType.DT_QINT16 => setType(_.intType().noDefault(), _.intType())
             case DataType.DT_QUINT16 => setType(_.intType().noDefault(), _.intType())
             case DataType.DT_UINT16 => setType(_.intType().noDefault(), _.intType())
             case DataType.DT_COMPLEX128 => setType(_.doubleType().noDefault(), _.doubleType())
             case DataType.DT_HALF => setType(_.intType().noDefault(), _.intType())
-            case DataType.DT_RESOURCE => rootBuilder // do nothing
-            case DataType.DT_VARIANT => rootBuilder // do nothing
             case DataType.DT_UINT32 => setType(_.longType().noDefault(), _.longType())
             case DataType.DT_UINT64 => setType(_.longType().noDefault(), _.longType())
             case DataType.DT_MAP => rootBuilder // do nothing

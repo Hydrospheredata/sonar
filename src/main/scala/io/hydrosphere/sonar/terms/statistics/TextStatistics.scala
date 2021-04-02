@@ -1,7 +1,9 @@
 package io.hydrosphere.sonar.terms.statistics
 
+import io.circe.generic.JsonCodec
 import io.hydrosphere.sonar.terms.TextPreprocessedProfile
 
+@JsonCodec
 case class TextStatistics (
   meanTokenLength: Double,
   meanCharacterLength: Double,

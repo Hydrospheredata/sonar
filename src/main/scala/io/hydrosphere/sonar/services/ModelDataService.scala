@@ -5,13 +5,12 @@ import cats.effect._
 import cats.effect.concurrent.Ref
 import cats.implicits._
 import io.grpc.{ClientInterceptors, ManagedChannelBuilder}
-import io.hydrosphere.serving.contract.model_contract.ModelContract
-import io.hydrosphere.serving.contract.model_field.ModelField
-import io.hydrosphere.serving.contract.model_signature.ModelSignature
+import io.hydrosphere.serving.proto.contract.signature.ModelSignature
+import io.hydrosphere.serving.proto.contract.field.ModelField
 import io.hydrosphere.serving.grpc.{AuthorityReplacerInterceptor, Headers}
-import io.hydrosphere.serving.manager.api.{GetVersionRequest, ManagerServiceGrpc}
-import io.hydrosphere.serving.manager.data_profile_types.DataProfileType
-import io.hydrosphere.serving.manager.grpc.entities.ModelVersion
+import io.hydrosphere.serving.proto.manager.api.{GetVersionRequest, ManagerServiceGrpc}
+import io.hydrosphere.serving.proto.contract.types.DataProfileType
+import io.hydrosphere.serving.proto.manager.entities.{ModelVersion, ModelVersionStatus}
 import io.hydrosphere.sonar.config.Configuration
 import io.hydrosphere.sonar.utils.FutureOps
 
@@ -23,7 +22,20 @@ trait ModelDataService[F[_]] {
 
 class ModelDataServiceIdInterpreter[F[_] : Monad] extends ModelDataService[F] {
   override def getModelVersion(modelVersionId: Long): F[ModelVersion] = {
-    val mv = ModelVersion(1, 1, "ModelType", "Status", None, None, Some(ModelContract("ModelName", Some(ModelSignature("infer", Seq(ModelField(name="blah", profile=DataProfileType.NUMERICAL)), Seq.empty[ModelField])))), None, "", None)
+    val mv = ModelVersion(
+      id = 1,
+      name = "ModelType",
+      version = 1,
+      status = ModelVersionStatus.Success,
+      signature = Some(ModelSignature(
+        signatureName = "infer",
+        inputs = Seq(ModelField(name = "input", profile = DataProfileType.NUMERICAL)),
+        outputs = Seq(ModelField(name = "output", profile = DataProfileType.NUMERICAL))
+      )),
+      imageSha = "",
+      depconfigName = "",
+      metadata = Map.empty[String, String],
+    )
     Monad[F].pure(mv)
   }
 }

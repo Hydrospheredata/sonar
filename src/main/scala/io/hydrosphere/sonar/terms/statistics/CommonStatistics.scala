@@ -1,7 +1,9 @@
 package io.hydrosphere.sonar.terms.statistics
 
+import io.circe.generic.JsonCodec
 import io.hydrosphere.sonar.terms.{NumericalPreprocessedProfile, TextPreprocessedProfile}
 
+@JsonCodec
 case class CommonStatistics(count: Long, distinctCount: Long, missing: Long)
 
 object CommonStatistics {

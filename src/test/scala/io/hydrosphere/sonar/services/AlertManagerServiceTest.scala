@@ -5,13 +5,12 @@ import java.util.UUID
 
 import cats.effect.IO
 import cats.implicits._
-import io.hydrosphere.serving.manager.grpc.entities.{Model, ModelVersion}
-import io.hydrosphere.serving.monitoring.api.ExecutionInformation
+import io.hydrosphere.serving.proto.manager.entities.ModelVersion
+import io.hydrosphere.monitoring.proto.sonar.entities.{ApplicationInfo, ExecutionMetadata, ExecutionInformation}
 import io.hydrosphere.sonar.terms.Check
 import org.scalatest.FunSuite
 import eu.timepit.refined._
 import eu.timepit.refined.auto._
-import io.hydrosphere.serving.monitoring.metadata.{ApplicationInfo, ExecutionMetadata}
 
 class AlertManagerServiceTest extends FunSuite {
 
@@ -35,7 +34,7 @@ class AlertManagerServiceTest extends FunSuite {
         modelName = modelName,
         modelVersion = mv,
         appInfo = ApplicationInfo(
-          applicationId = 1,
+          applicationName = "app",
           stageId = "stage-2"
         ).some
       ).some
@@ -43,7 +42,6 @@ class AlertManagerServiceTest extends FunSuite {
     val modelVersion = ModelVersion(
       id = mvId,
       version = mv,
-      model = Model(modelId, modelName).some
     )
     val profileChecks = Map(
       "field_a" -> Seq(
