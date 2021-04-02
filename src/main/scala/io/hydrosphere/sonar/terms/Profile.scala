@@ -1,9 +1,12 @@
 package io.hydrosphere.sonar.terms
 
+import io.circe.generic.JsonCodec
 import io.hydrosphere.sonar.terms.statistics._
 
+@JsonCodec
 sealed trait Profile
 
+@JsonCodec
 case class NumericalProfile(
    name: String,
    modelVersionId: Long,
@@ -27,7 +30,7 @@ object NumericalProfile {
   }
 }
 
-
+@JsonCodec
 case class TextProfile(
   name: String,
   modelVersionId: Long,

@@ -12,6 +12,7 @@ import com.amazonaws.services.s3.model._
 import enumeratum.{Enum, EnumEntry}
 import fs2.io.file
 import fs2.{Chunk, Pull, Stream, text}
+import io.circe.generic.JsonCodec
 import io.hydrosphere.serving.proto.contract.types.DataProfileType
 import io.hydrosphere.serving.proto.manager.entities.ModelVersion
 import io.hydrosphere.sonar.Logging
@@ -37,6 +38,7 @@ trait TrainingProfileService[F[_], S[_[_], _]] {
 }
 
 object TrainingProfileService {
+  @JsonCodec
   sealed trait ProcessingStatus extends EnumEntry
 
   object ProcessingStatus extends Enum[ProcessingStatus] {

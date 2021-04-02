@@ -12,16 +12,18 @@ import com.twitter.finagle.http.Status
 import com.twitter.finagle.{Service, SimpleFilter}
 import com.twitter.finagle.http.filter.LogFormatter
 import com.twitter.util.{Duration, Future, Return, Stopwatch, Throw}
+import io.circe.generic.JsonCodec
 //import com.twitter.finagle.filter.LoggingFilter
 import com.twitter.finagle.http.filter.{CommonLogFormatter, Cors, LoggingFilter}
 import com.twitter.finagle.http.{Request, Response}
 import com.twitter.logging.Logger
 import fs2.{text, Stream => Fs2Stream}
 import fs2.io.file
-import io.circe.{Encoder, Json}
+import io.circe.{Encoder, Decoder, Json}
 import io.circe.parser.{decode, parse}
 import io.circe.generic.extras.{Configuration => CirceExtraConfiguration}
 import io.circe.generic.extras.auto._
+import io.circe._, io.circe.generic.semiauto._
 import io.finch._
 import io.finch.fs2._
 import io.finch.circe._
@@ -37,8 +39,15 @@ import com.twitter.finagle.filter.{LogFormatter => FinagleLogFormatter}
 import scala.concurrent.ExecutionContext
 import scala.util.control.NonFatal
 
+@JsonCodec
 case class ProfileResponse(training: Option[Profile], production: Option[Profile])
+@JsonCodec
 case class S3FilePath(path: String)
+
+object JsonConversionsOps {
+  implicit val buildInfoDecoder: Decoder[BuildInfo] = deriveDecoder
+  implicit val buildInfoEncoder: Encoder[BuildInfo] = deriveEncoder
+}
 
 abstract class RequestLoggingFilter[REQ <: Request](val formatter: FinagleLogFormatter[REQ, Response])
   extends SimpleFilter[REQ, Response] with Logging {
@@ -80,6 +89,7 @@ class HttpService[F[_] : Monad : Effect](
                                           checkStorageService: CheckStorageService[F],
                                           checkSlowStorageService: CheckSlowStorageService[F]
 )(implicit cs: ContextShift[F]) extends Logging with Endpoint.Module[F] {
+  import JsonConversionsOps._
 
   implicit val genDevConfig: CirceExtraConfiguration =
     CirceExtraConfiguration.default.withDefaults.withDiscriminator("kind")
@@ -103,21 +113,21 @@ class HttpService[F[_] : Monad : Effect](
     Ok("ok").pure[F]
   }
   
-  def getProfiles = get("monitoring" :: "profiles" :: path[Long] :: path[String]) { (modelVersionId: Long, fieldName: String) =>
+  def getProfiles: Endpoint[F, ProfileResponse] = get("monitoring" :: "profiles" :: path[Long] :: path[String]) { (modelVersionId: Long, fieldName: String) =>
     for {
       training <- profileStorageService.getProfile(modelVersionId, fieldName, ProfileSourceKind.Training)
       production <- profileStorageService.getProfile(modelVersionId, fieldName, ProfileSourceKind.Production)
     } yield Ok(ProfileResponse(training, production))
   }
-  
-  def getProfileNames = get("monitoring" :: "fields" :: path[Long]) { modelVersionId: Long =>
+
+  def getProfileNames: Endpoint[F, Seq[String]] = get("monitoring" :: "fields" :: path[Long]) { modelVersionId: Long =>
     for {
       training <- profileStorageService.getPreprocessedDistinctNames(modelVersionId, ProfileSourceKind.Training)
       production <- profileStorageService.getPreprocessedDistinctNames(modelVersionId, ProfileSourceKind.Production)
     } yield Ok((training ++ production).distinct.sorted)
   }
-  
-  def fileBatchProfile = post("monitoring" :: "profiles" :: "batch" :: path[Long] :: stringBody) { (modelVersionId: Long, contents: String) => 
+
+  def fileBatchProfile: Endpoint[F, String] = post("monitoring" :: "profiles" :: "batch" :: path[Long] :: stringBody) { (modelVersionId: Long, contents: String) =>
     for {
       _ <- Effect[F].delay(logger.info("file"))
       modelVersion <- modelDataService.getModelVersion(modelVersionId)
@@ -139,8 +149,8 @@ class HttpService[F[_] : Monad : Effect](
       _ <- batchProfileService.batchCsvProcess(tempFile.toString, modelVersion)
     } yield Ok("ok")
   }
-  
-  def batchProfile = post("monitoring" :: "profiles" :: "batch" :: path[Long] :: stringBodyStream[Fs2Stream]) { (modelVersionId: Long, stream: Fs2Stream[F, String]) =>
+
+  def batchProfile: Endpoint[F, String] = post("monitoring" :: "profiles" :: "batch" :: path[Long] :: stringBodyStream[Fs2Stream]) { (modelVersionId: Long, stream: Fs2Stream[F, String]) =>
     for {
       _ <- Effect[F].delay(logger.info("stream"))
       modelVersion <- modelDataService.getModelVersion(modelVersionId)
@@ -159,24 +169,24 @@ class HttpService[F[_] : Monad : Effect](
       _ <- batchProfileService.batchCsvProcess(tempFile.toString, modelVersion)
     } yield Ok("ok")
   }
-  
-  def s3BatchProfile = post("monitoring" :: "profiles" :: "batch" :: path[Long] :: "s3" :: jsonBody[S3FilePath]) { (modelVersionId: Long, s3FilePath: S3FilePath) => 
+
+  def s3BatchProfile: Endpoint[F, String] = post("monitoring" :: "profiles" :: "batch" :: path[Long] :: "s3" :: jsonBody[S3FilePath]) { (modelVersionId: Long, s3FilePath: S3FilePath) =>
     for {
       _ <- Effect[F].delay(logger.info("s3"))
       modelVersion <- modelDataService.getModelVersion(modelVersionId)
       _ <- batchProfileService.batchCsvProcess(s3FilePath.path, modelVersion)
     } yield Ok("ok")
   }
-  
-  def getBatchStatus = get("monitoring" :: "profiles" :: "batch" :: path[Long] :: "status") { modelVersionId: Long =>
+
+  def getBatchStatus: Endpoint[F, TrainingProfileService.ProcessingStatus] = get("monitoring" :: "profiles" :: "batch" :: path[Long] :: "status") { modelVersionId: Long =>
     batchProfileService.getProcessingStatus(modelVersionId).map(Ok)
   }
 
-  def getBuildInfo = get("monitoring" :: "buildinfo") {
+  def getBuildInfo: Endpoint[F, BuildInfo] = get("monitoring" :: "buildinfo") {
     Ok(BuildInfo.value).pure[F]
   }
-  
-  def getChecks = get("monitoring" :: "checks" :: path[Long] :: param[String]("from") :: param[String]("to")) { (modelVersionId: Long, from: String, to: String) =>
+
+  def getChecks: Endpoint[F, Seq[Json]] = get("monitoring" :: "checks" :: path[Long] :: param[String]("from") :: param[String]("to")) { (modelVersionId: Long, from: String, to: String) =>
     checkStorageService.getChecks(modelVersionId, from, to).map { jsonStrings => // TODO: ooph, dirty hacks
       jsonStrings.map(jsonString =>
         parse(jsonString) match {
@@ -186,8 +196,8 @@ class HttpService[F[_] : Monad : Effect](
       )
     }.map(Ok)
   }
-  
-  def getChecksWithOffset = get("monitoring" :: "checks" :: "all" :: path[Long] :: param[Int]("limit") :: param[Int]("offset")) { (modelVersionId: Long, limit: Int, offset: Int) =>
+
+  def getChecksWithOffset: Endpoint[F, Seq[Json]] = get("monitoring" :: "checks" :: "all" :: path[Long] :: param[Int]("limit") :: param[Int]("offset")) { (modelVersionId: Long, limit: Int, offset: Int) =>
     checkStorageService.getChecks(modelVersionId, limit, offset).map { jsonStrings => // TODO: ooph, dirty hacks
       jsonStrings.map(jsonString =>
         parse(jsonString) match {
@@ -198,7 +208,7 @@ class HttpService[F[_] : Monad : Effect](
     }.map(Ok)
   }
 
-  def getCheckAggregates = get("monitoring" :: "checks" :: "aggregates" :: path[Long] :: param[Int]("limit") :: param[Int]("offset") :: paramOption[Int]("from") :: paramOption[Int]("till")) { (modelVersionId: Long, limit: Int, offset: Int, from: Option[Int], till: Option[Int]) =>
+  def getCheckAggregates: Endpoint[F, Json] = get("monitoring" :: "checks" :: "aggregates" :: path[Long] :: param[Int]("limit") :: param[Int]("offset") :: paramOption[Int]("from") :: paramOption[Int]("till")) { (modelVersionId: Long, limit: Int, offset: Int, from: Option[Int], till: Option[Int]) =>
     val program = for {
       count <- checkStorageService.getAggregateCount(modelVersionId, from, till)
       dateRange <- checkStorageService.getAggregateDateRange(modelVersionId)
@@ -210,16 +220,16 @@ class HttpService[F[_] : Monad : Effect](
         }
       )
     } yield Json.obj(
-      "count" -> Json.fromLong(count), 
+      "count" -> Json.fromLong(count),
       "minDate" -> dateRange.map(dates => Json.fromInt(dates._1)).getOrElse(Json.Null),
       "maxDate" -> dateRange.map(dates => Json.fromInt(dates._2)).getOrElse(Json.Null),
       "results" -> Json.arr(jsons: _*)
     )
-    
+
     program.map(Ok)
   }
 
-  def getCheckById = get("monitoring" :: "checks" :: path[String]) { (id: String) =>
+  def getCheckById: Endpoint[F, Option[Json]] = get("monitoring" :: "checks" :: path[String]) { (id: String) =>
     checkStorageService.getCheckById(id).map { maybeString => maybeString.map { jsonString =>
       parse(jsonString) match {
         case Left(value) => Json.Null
@@ -229,13 +239,13 @@ class HttpService[F[_] : Monad : Effect](
     }.map(Ok)
   }
 
-  def getTrainingData = get("monitoring" :: "training_data" :: param[Long]("modelVersionId")) { modelVersionId: Long =>
+  def getTrainingData: Endpoint[F, Seq[String]] = get("monitoring" :: "training_data" :: param[Long]("modelVersionId")) { modelVersionId: Long =>
     for {
       result <- batchProfileService.getTrainingData(modelVersionId)
     } yield Ok(result)
   }
-  
-  def getSlowChecks = get("monitoring" :: "slow" :: "checks" :: path[Long] :: path[String]) { (modelVersionId: Long, aggregationId: String) =>
+
+  def getSlowChecks: Endpoint[F, Seq[Json]] = get("monitoring" :: "slow" :: "checks" :: path[Long] :: path[String]) { (modelVersionId: Long, aggregationId: String) =>
     for {
       jsonStrings <- checkStorageService.getChecksByAggregationId(modelVersionId, aggregationId)
       jsons = jsonStrings.map((jsonString: String) =>
@@ -246,8 +256,8 @@ class HttpService[F[_] : Monad : Effect](
       )
     } yield Ok(jsons)
   }
-  
-  def getSubsample = get("monitoring" :: "checks" :: "subsample" :: path[Long] :: param[Int]("size")) { (modelVersionId: Long, size: Int) =>
+
+  def getSubsample: Endpoint[F, Seq[Json]] = get("monitoring" :: "checks" :: "subsample" :: path[Long] :: param[Int]("size")) { (modelVersionId: Long, size: Int) =>
     for {
       jsonStrings <- checkStorageService.getCheckSubsample(modelVersionId, size)
       jsons = jsonStrings.map((jsonString: String) =>
@@ -258,8 +268,8 @@ class HttpService[F[_] : Monad : Effect](
       )
     } yield Ok(jsons)
   }
-  
-  def getComparingChecks = get("monitoring" :: "checks" :: "comparision" :: path[Long] :: path[String] :: path[Long]) { (originalModelVersionId: Long, aggregationId: String, comparingModelVersionId: Long) =>
+
+  def getComparingChecks: Endpoint[F, Seq[Json]] = get("monitoring" :: "checks" :: "comparision" :: path[Long] :: path[String] :: path[Long]) { (originalModelVersionId: Long, aggregationId: String, comparingModelVersionId: Long) =>
     for {
       jsonStrings <- checkStorageService.getChecksForComparision(originalModelVersionId, aggregationId, comparingModelVersionId)
       jsons = jsonStrings.map((jsonString: String) =>
@@ -269,7 +279,7 @@ class HttpService[F[_] : Monad : Effect](
         }
       )
     } yield Ok(jsons)
-  } 
+  }
 
   def endpoints = (getComparingChecks :+: getSubsample :+: getSlowChecks :+: getTrainingData :+: getChecks :+: getCheckById :+: getCheckAggregates :+: getBuildInfo :+: healthCheck :+: getProfiles :+: getProfileNames :+: batchProfile :+: getBatchStatus :+: fileBatchProfile :+: s3BatchProfile :+: getChecksWithOffset) handle {
     case e: io.finch.Error.NotParsed =>
