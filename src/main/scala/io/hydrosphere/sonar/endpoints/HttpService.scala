@@ -178,8 +178,8 @@ class HttpService[F[_] : Monad : Effect](
     } yield Ok("ok")
   }
 
-  def getBatchStatus: Endpoint[F, TrainingProfileService.ProcessingStatus] = get("monitoring" :: "profiles" :: "batch" :: path[Long] :: "status") { modelVersionId: Long =>
-    batchProfileService.getProcessingStatus(modelVersionId).map(Ok)
+  def getBatchStatus: Endpoint[F, Map[String, String]] = get("monitoring" :: "profiles" :: "batch" :: path[Long] :: "status") { modelVersionId: Long =>
+    batchProfileService.getProcessingStatus(modelVersionId).map(status => Ok(Map("kind" -> status.toString)))
   }
 
   def getBuildInfo: Endpoint[F, BuildInfo] = get("monitoring" :: "buildinfo") {
