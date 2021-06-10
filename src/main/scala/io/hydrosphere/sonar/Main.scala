@@ -43,6 +43,7 @@ object Dependencies {
         .builder()
         .applyToClusterSettings(b => b.applyConnectionString(new ConnectionString(s"mongodb://${config.mongo.host}:${config.mongo.port}/${config.mongo.database}?authSource=admin")))
         .applyToConnectionPoolSettings(b => b.maxSize(200).maxWaitTime(100, TimeUnit.SECONDS))
+        .retryWrites(config.mongo.retryWrites)
       val credentials: Option[MongoCredential] = for {
         user <- config.mongo.user
         pass <- config.mongo.pass

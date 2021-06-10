@@ -6,5 +6,6 @@ case class MongoConfiguration(
   database: String,
   user: Option[String],
   pass: Option[String],
-  authDb: Option[String]
+  authDb: Option[String],
+  retryWrites: Boolean = true,
 )
