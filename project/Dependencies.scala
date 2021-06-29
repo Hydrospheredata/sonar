@@ -2,6 +2,7 @@ import sbt._
 
 object Dependencies {
 
+  val servingGrpcScala  = "3.0.0-dev3"
 
   val LogbackV = "1.2.3"
   val logback: Seq[ModuleID] = Seq(
@@ -27,7 +28,7 @@ object Dependencies {
 
   val grpc: Seq[ModuleID] = Seq(
     "io.grpc" % "grpc-netty" % "1.36.0",
-    "io.hydrosphere" %% "serving-grpc-scala" % "3.0.0-dev3"
+    "io.hydrosphere" %% "serving-grpc-scala" % servingGrpcScala
   )
 
   val PureConfigV = "0.12.1"
