@@ -20,6 +20,7 @@ scalacOptions ++= Seq(
 
 resolvers += "Flyway" at "https://flywaydb.org/repo"
 resolvers += Resolver.sonatypeRepo("releases")
+resolvers += Resolver.sonatypeRepo("public")
 
 libraryDependencies ++= Dependencies.projectDeps
 
