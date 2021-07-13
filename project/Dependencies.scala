@@ -27,7 +27,6 @@ object Dependencies {
   )
 
   val grpc: Seq[ModuleID] = Seq(
-    "io.grpc" % "grpc-netty" % "1.36.0",
     "io.hydrosphere" %% "serving-grpc-scala" % servingGrpcScala
   )
 
