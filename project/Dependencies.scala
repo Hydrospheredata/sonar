@@ -2,7 +2,7 @@ import sbt._
 
 object Dependencies {
 
-  val servingGrpcScala  = "3.0.0-dev3"
+  val servingGrpcScala  = "3.0.0"
 
   val LogbackV = "1.2.3"
   val logback: Seq[ModuleID] = Seq(
