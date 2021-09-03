@@ -19,7 +19,7 @@ APP_OPTS=""
 [[ -z "$MONGO_HOST" ]] && MONGO_HOST="mongo"
 [[ -z "$MONGO_PORT" ]] && MONGO_PORT="27017"
 [[ -z "$MONGO_DATABASE" ]] && MONGO_DATABASE="sonar-profiles"
-[[ -z "$MONGO_RETRY_WRITES"]] && MONGO_RETRY_WRITES="true"
+[[ -z "$MONGO_RETRY_WRITES" ]] && MONGO_RETRY_WRITES="true"
 
 [[ -z "$SIDECAR_HOST" ]] && SIDECAR_HOST="sidecar"
 [[ -z "$SIDECAR_GRPC_PORT" ]] && SIDECAR_GRPC_PORT="9090"
@@ -64,5 +64,5 @@ else
    cat $CUSTOM_CONFIG
 fi
 
-echo ${JAVA} ${JAVA_OPTS} -cp "/app/app.jar:/app/lib/*" ${APP_OPTS} io.hydrosphere.sonar.Main
-${JAVA} ${JAVA_OPTS} -cp "/app/app.jar:/app/lib/*" ${APP_OPTS} io.hydrosphere.sonar.Main
+echo ${JAVA} ${JAVA_OPTS} -cp "app.jar:./lib/*" ${APP_OPTS} io.hydrosphere.sonar.Main
+${JAVA} ${JAVA_OPTS} -cp "app.jar:./lib/*" ${APP_OPTS} io.hydrosphere.sonar.Main

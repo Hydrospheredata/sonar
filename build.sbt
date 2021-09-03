@@ -29,39 +29,46 @@ cancelable in Global := true
 enablePlugins(BuildInfoPlugin, sbtdocker.DockerPlugin)
 addCompilerPlugin("org.scalamacros" % "paradise" % "2.1.0" cross CrossVersion.full)
 
-dockerfile in docker := {
+docker / dockerfile := {
   val dockerFilesLocation = baseDirectory.value / "src/main/docker/"
-  val jarFile: File = sbt.Keys.`package`.in(Compile, packageBin).value
-  val classpath = (dependencyClasspath in Compile).value
-  val artifactTargetPath = s"/app/app.jar"
+  val jarFile: File = (Compile / packageBin / sbt.Keys.`package`).value
+  val classpath = (Compile / dependencyClasspath).value
+  val artifactTargetPath = "app.jar"
 
 
   new Dockerfile {
-    from("openjdk:alpine")
+    from("openjdk:17-ea-jdk-alpine3.14")
 
     label("SERVICE_ID", "-30")
     label("HS_SERVICE_MARKER", "HS_SERVICE_MARKER")
     label("DEPLOYMENT_TYPE", "APP")
     label("RUNTIME_ID", "-30")
     label("SERVICE_NAME", "monitoring")
+    label("maintainer", "support@hydrosphere.io")
 
     env("KAFKA_HOST", "kafka")
     env("KAFKA_PORT", "9092")
     env("APP_PORT", "9091")
     
     run("apk", "update")
-    run("apk", "add", "--no-cache", "libc6-compat", "nss")
+    run("apk", "add", "--no-cache", "apk-tools>=2.12.7", "libcrypto1.1>=1.1.1", "libssl1.1>=1.1.1", "openssl>=1.1.1")
+    // run("apk", "update")
+    // run("apk", "add", "--no-cache", "libc6-compat", "nss")
 
-    add(dockerFilesLocation, "/app/")
+    workDir("/app/")
+    
+    copy(dockerFilesLocation, "./", "--chown=daemon:daemon")
+    copy(classpath.files, "./lib/", "--chown=daemon:daemon")
+    copy(jarFile, artifactTargetPath, "--chown=daemon:daemon")
+    run("chmod", "+x", "start.sh")
+
+    user("daemon")
+
     cmd("/app/start.sh")
-    run("chmod", "+x", "/app/start.sh")
-
-    add(classpath.files, "/app/lib/")
-    add(jarFile, artifactTargetPath)
   }
 }
 
-imageNames in docker := Seq(
+docker / imageNames := Seq(
   ImageName(
     namespace = Some("hydrosphere"),
     repository = name.value,
@@ -73,6 +80,6 @@ buildInfoKeys := Seq[BuildInfoKey](name, version, scalaVersion, sbtVersion, git.
 buildInfoPackage := "io.hydrosphere.sonar"
 buildInfoOptions += BuildInfoOption.ToJson
 buildInfoRenderFactory := ScalaCaseClassRenderer.apply
-unmanagedSourceDirectories in Compile += sourceManaged.value
+Compile / unmanagedSourceDirectories += sourceManaged.value
 
 excludeDependencies += "org.slf4j" % "slf4j-log4j12"
