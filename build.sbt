@@ -5,7 +5,7 @@ name := "sonar"
 
 scalaVersion := "2.12.7"
 
-version := sys.props.getOrElse("appVersion", "latest")
+version := sys.props.getOrElse("appVersion", IO.read(file("version")).trim)
 
 scalacOptions ++= Seq(
   "-unchecked",
@@ -51,15 +51,15 @@ docker / dockerfile := {
     env("APP_PORT", "9091")
     
     run("apk", "update")
-    run("apk", "add", "--no-cache", "apk-tools>=2.12.7", "libcrypto1.1>=1.1.1", "libssl1.1>=1.1.1", "openssl>=1.1.1")
+    run("apk", "add", "--no-cache", "apk-tools>=2.12.7", "libcrypto1.1>=1.1.1l-r0", "libssl1.1>=1.1.1l-r0", "openssl>=1.1.1l-r0")
     // run("apk", "update")
     // run("apk", "add", "--no-cache", "libc6-compat", "nss")
 
     workDir("/app/")
     
-    copy(dockerFilesLocation, "./", "--chown=daemon:daemon")
-    copy(classpath.files, "./lib/", "--chown=daemon:daemon")
-    copy(jarFile, artifactTargetPath, "--chown=daemon:daemon")
+    copy(dockerFilesLocation, "./", "daemon:daemon")
+    copy(classpath.files, "./lib/", "daemon:daemon")
+    copy(jarFile, artifactTargetPath, "daemon:daemon")
     run("chmod", "+x", "start.sh")
 
     user("daemon")
@@ -69,11 +69,7 @@ docker / dockerfile := {
 }
 
 docker / imageNames := Seq(
-  ImageName(
-    namespace = Some("hydrosphere"),
-    repository = name.value,
-    tag = Some(version.value)
-  )
+  ImageName(s"hydrosphere/${name.value}:${version.value}")
 )
 
 buildInfoKeys := Seq[BuildInfoKey](name, version, scalaVersion, sbtVersion, git.gitCurrentBranch, git.gitCurrentTags, git.gitHeadCommit)
