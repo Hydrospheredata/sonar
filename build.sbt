@@ -37,7 +37,7 @@ docker / dockerfile := {
 
 
   new Dockerfile {
-    from("openjdk:17-ea-jdk-alpine3.14")
+    from("openjdk:8u212-jre-alpine3.9")
 
     label("SERVICE_ID", "-30")
     label("HS_SERVICE_MARKER", "HS_SERVICE_MARKER")
@@ -51,7 +51,7 @@ docker / dockerfile := {
     env("APP_PORT", "9091")
     
     run("apk", "update")
-    run("apk", "add", "--no-cache", "apk-tools>=2.12.7", "libcrypto1.1>=1.1.1l-r0", "libssl1.1>=1.1.1l-r0", "openssl>=1.1.1l-r0")
+    run("apk", "add", "--no-cache", "libcrypto1.1", "libssl1.1", "openssl")
     // run("apk", "update")
     // run("apk", "add", "--no-cache", "libc6-compat", "nss")
 
